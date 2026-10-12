@@ -22,8 +22,9 @@ export const RIPPLE_TYPE_ORDER = Object.keys(
 
 const RIPPLE_PRIORITY: Record<RippleType, number> = {
   rain: 0,
-  mouth: 1,
-  touch: 2,
+  wake: 1,
+  mouth: 2,
+  touch: 3,
 };
 
 export class RippleSystem {

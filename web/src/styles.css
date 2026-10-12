@@ -175,6 +175,19 @@ input[type="color"] {
   box-shadow: none;
 }
 
+/* Desktop-wallpaper mode (?wallpaper): the pond fills the screen edge to edge
+   at the screen's own aspect ratio (see wallpaperRenderSize). */
+.stage--wallpaper .pond-shell {
+  width: 100vw;
+  height: 100dvh;
+}
+
+.stage--wallpaper .display {
+  height: 100%;
+  aspect-ratio: auto;
+  box-shadow: none;
+}
+
 .stage--ambient-idle,
 .stage--ambient-idle #pond {
   cursor: none;

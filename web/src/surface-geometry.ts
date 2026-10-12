@@ -98,6 +98,30 @@ export class SurfaceGeometryBatch {
     }
   }
 
+  /** An ellipse whose radii follow the given (unit) forward and side axes. */
+  public ellipse(
+    center: SurfacePoint,
+    forward: SurfacePoint,
+    side: SurfacePoint,
+    forwardRadius: number,
+    sideRadius: number,
+    color: THREE.Color = DEFAULT_COLOR,
+    segments = 10,
+  ): void {
+    const pointAt = (angle: number): SurfacePoint => ({
+      x: center.x + forward.x * Math.cos(angle) * forwardRadius + side.x * Math.sin(angle) * sideRadius,
+      y: center.y + forward.y * Math.cos(angle) * forwardRadius + side.y * Math.sin(angle) * sideRadius,
+    });
+    for (let index = 0; index < segments; index += 1) {
+      this.triangle(
+        center,
+        pointAt((index / segments) * Math.PI * 2),
+        pointAt(((index + 1) / segments) * Math.PI * 2),
+        color,
+      );
+    }
+  }
+
   public commit(): void {
     this.geometry.setDrawRange(0, this.cursor / 3);
     this.positionAttribute.clearUpdateRanges();

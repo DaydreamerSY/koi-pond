@@ -7,13 +7,16 @@ import {
   MAX_FISH,
   SPINE_NODES,
 } from "./config";
+import { BedCritterRenderer } from "./bed-critter-renderer";
 import { ButterflyPass } from "./butterflies";
+import { DuckRenderer } from "./duck-renderer";
 import { DuckweedPass } from "./duckweed";
 import {
   createFishAppearance,
   patchesFor,
   type FishAppearance,
 } from "./fish-appearance";
+import { FrogRenderer } from "./frog-renderer";
 import { Koi, SwimState } from "./koi";
 import { LotusLeavesPass } from "./lotus-leaves";
 import {
@@ -204,6 +207,7 @@ export class FishRenderer {
 
   private readonly renderer: THREE.WebGLRenderer;
   private readonly bedScene = new THREE.Scene();
+  private readonly bedCritterScene = new THREE.Scene();
   private readonly shadowScene = new THREE.Scene();
   private readonly fishShadowScene = new THREE.Scene();
   private readonly fishScene = new THREE.Scene();
@@ -230,6 +234,9 @@ export class FishRenderer {
   private readonly duckweed = new DuckweedPass();
   private readonly lotusLeaves = new LotusLeavesPass();
   private readonly butterflies = new ButterflyPass();
+  private readonly bedCritters = new BedCritterRenderer();
+  private readonly duckRenderer = new DuckRenderer();
+  private readonly frogRenderer = new FrogRenderer();
   private readonly fishShadowMaterial = shadowMaterial(1);
   private readonly shadowTriangles: GeometryBatch;
   private readonly outerTriangles: GeometryBatch;
@@ -285,9 +292,11 @@ export class FishRenderer {
     );
     this.weather = new WeatherPass(this.compositeTarget.texture);
     this.bedScene.add(this.pondBed.mesh);
+    this.bedCritterScene.add(this.bedCritters.group);
     this.shadowScene.add(
       this.lotusLeaves.shadowGroup,
       this.tinyFishRenderer.shadowGroup,
+      this.duckRenderer.shadowGroup,
     );
     this.fishScene.add(this.tinyFishRenderer.group);
     this.surfaceScene.add(this.waterSurface.mesh);
@@ -298,6 +307,8 @@ export class FishRenderer {
     this.surfaceObjectScene.add(
       this.duckweed.group,
       this.lotusLeaves.group,
+      this.frogRenderer.group,
+      this.duckRenderer.group,
       this.butterflies.group,
     );
     this.weatherScene.add(this.weather.mesh);
@@ -493,6 +504,18 @@ export class FishRenderer {
     this.tinyFishRenderer.group.visible = previewIndex === null;
     this.tinyFishRenderer.shadowGroup.visible = previewIndex === null;
     if (previewIndex === null) this.tinyFishRenderer.update(school.tinyFish);
+    // Pond visitors step aside while a koi family is previewed, like the tiny fish.
+    for (const group of [
+      this.bedCritters.group,
+      this.duckRenderer.group,
+      this.duckRenderer.shadowGroup,
+      this.frogRenderer.group,
+    ]) group.visible = previewIndex === null;
+    if (previewIndex === null) {
+      this.bedCritters.update(school.crabs.crabs, school.shrimp.shrimp, time);
+      this.duckRenderer.update(school.ducks.ducks, time);
+      this.frogRenderer.update(school.frogs.frogs);
+    }
     this.pondBed.update(time);
     this.surfaceDisturbance.render(
       this.renderer,
@@ -509,6 +532,7 @@ export class FishRenderer {
     this.renderer.clear();
     this.renderer.autoClear = false;
     this.renderer.render(this.bedScene, this.camera);
+    this.renderer.render(this.bedCritterScene, this.camera);
     this.renderer.render(this.shadowScene, this.camera);
     this.renderer.render(this.fishShadowScene, this.camera);
     this.renderer.render(this.fishScene, this.camera);

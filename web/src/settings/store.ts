@@ -492,6 +492,45 @@ export class SettingsStore {
   }
 
   public importOverrides(saved: Record<string, unknown>, weather: WeatherPresetId, rain: boolean): void {
+    this.fillOverrides(saved);
+    this.weatherId = weather;
+    this.rain = rain;
+    this.recomputeAll();
+  }
+
+  /**
+   * Applies settings another window saved (cross-window sync) to a running
+   * pond: only sections whose overrides changed are refreshed, and nothing is
+   * persisted back or pushed onto the undo stack.
+   */
+  public replaceFromSaved(saved: Record<string, unknown>, weather: WeatherPresetId, rain: boolean): void {
+    const sectionOverrides = (): Map<string, string> => {
+      const bySection = new Map<string, Record<string, unknown>>();
+      for (const [key, value] of this.overrides) {
+        const root = key.split(".")[0];
+        bySection.set(root, { ...bySection.get(root), [key]: value });
+      }
+      return new Map([...bySection].map(([root, entries]) => [root, JSON.stringify(entries)]));
+    };
+    const before = sectionOverrides();
+    const weatherChanged = weather !== this.weatherId;
+    const rainChanged = rain !== this.rain;
+
+    this.fillOverrides(saved);
+    this.weatherId = weather;
+    this.rain = rain;
+    this.openInteraction = null;
+
+    const after = sectionOverrides();
+    const changed = new Set<SectionId>(weatherChanged ? ["koi", "pond-bed", "water"] : []);
+    for (const id of Object.keys(definition.children) as SectionId[]) {
+      if (before.get(id) !== after.get(id)) changed.add(id);
+    }
+    if (changed.size > 0) this.fullRefresh([...changed]);
+    if (rainChanged) this.notify([{ path: ["__rain__"], prev: !rain, next: rain, effect: "rain" }]);
+  }
+
+  private fillOverrides(saved: Record<string, unknown>): void {
     this.overrides.clear();
     for (const [key, value] of Object.entries(saved)) {
       const path = key.split(".").map((segment) => (/^\d+$/.test(segment) ? Number(segment) : segment));
@@ -509,9 +548,6 @@ export class SettingsStore {
         if (validated !== undefined) this.overrides.set(key, validated);
       }
     }
-    this.weatherId = weather;
-    this.rain = rain;
-    this.recomputeAll();
   }
 }
 

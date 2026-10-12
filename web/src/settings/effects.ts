@@ -80,6 +80,16 @@ const HANDLERS: Record<string, EffectHandler> = {
   "duckweed:live": { run: () => {} },
   "butterflies:keep": { run: (runtime) => runtime.renderer.refreshSection("butterflies") },
   "butterflies:respawn": { run: (runtime) => runtime.renderer.refreshSection("butterfly-spawns") },
+  // Pond visitors read their behavior and colors live; only their numbers (and
+  // spawn-time sizes) need the flock rebuilt.
+  "ducks:respawn": { run: (runtime) => runtime.school.ducks.respawn() },
+  "crabs:respawn": { run: (runtime) => runtime.school.crabs.respawn() },
+  "shrimp:respawn": { run: (runtime) => runtime.school.shrimp.respawn() },
+  "frogs:respawn": { run: (runtime) => runtime.school.frogs.respawn() },
+  "ducks:live": { run: () => {} },
+  "crabs:live": { run: () => {} },
+  "shrimp:live": { run: () => {} },
+  "frogs:live": { run: () => {} },
 };
 
 export function connectSettingsEffects(store: SettingsStore, runtime: SettingsRuntime): () => void {

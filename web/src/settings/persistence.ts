@@ -7,6 +7,7 @@ import type { SettingsStore } from "./store";
 import { WEATHER_PRESETS, type WeatherPresetId } from "../weather";
 
 const STORAGE_KEY_V2 = "nagomi:pond-settings:v2";
+export const SETTINGS_STORAGE_KEY = STORAGE_KEY_V2;
 const STORAGE_KEY_V1 = "nagomi:pond-settings:v1";
 
 interface SavedV2 {
@@ -127,9 +128,27 @@ export function save(store: SettingsStore): void {
 export function connectPersistence(store: SettingsStore): () => void {
   store.onPersistRequested(() => save(store));
   const onPageHide = (): void => store.flushPersist();
-  if (typeof window !== "undefined") window.addEventListener("pagehide", onPageHide);
+  // Another window on this origin (e.g. the wallpaper and its settings window)
+  // saved new settings: apply them here without saving them back.
+  const onStorage = (event: StorageEvent): void => {
+    if (event.key !== STORAGE_KEY_V2) return;
+    const saved = readJson(STORAGE_KEY_V2) as Partial<SavedV2> | null;
+    if (!saved || saved.version !== 2 || !isValidWeather(saved.weather)) return;
+    store.replaceFromSaved(
+      (saved.overrides as Record<string, unknown>) ?? {},
+      saved.weather,
+      saved.rain === true,
+    );
+  };
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("storage", onStorage);
+  }
   return () => {
-    if (typeof window !== "undefined") window.removeEventListener("pagehide", onPageHide);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("storage", onStorage);
+    }
   };
 }
 

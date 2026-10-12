@@ -6,6 +6,8 @@
 import { settings } from "./settings/store";
 import type {
   ButterflySpawnSetting,
+  DuckPaletteSetting,
+  DuckSpawnSetting,
   DuckweedPatchSetting,
   KoiPaletteSetting,
   KoiPatchSetting,
@@ -19,6 +21,8 @@ export { MAX_DUCKWEED_PATCHES } from "./settings/definition";
 
 export type {
   ButterflySpawnSetting,
+  DuckPaletteSetting,
+  DuckSpawnSetting,
   DuckweedPatchSetting,
   KoiPaletteSetting,
   KoiPatchSetting,
@@ -61,6 +65,11 @@ export const DUCKWEED = live.duckweed;
 export const DUCKWEED_PATCHES = live["duckweed-patches"];
 export const BUTTERFLIES = live.butterflies;
 export const BUTTERFLY_SPAWNS = live["butterfly-spawns"];
+export const DUCKS = live.ducks;
+export const DUCK_SPAWNS = live["duck-spawns"];
+export const CRABS = live.crabs;
+export const SHRIMP = live.shrimp;
+export const FROGS = live.frogs;
 
 // The settings coordinates above remain in the original landscape layout.
 // The simulation and renderer use these live dimensions for the visible pond.

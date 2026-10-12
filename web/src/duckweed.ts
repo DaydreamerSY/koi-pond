@@ -22,7 +22,7 @@ import {
 
 const MAX_DUCKWEED_RIPPLES = 32;
 // When more ripples are alive than fit in the uniform array, keep these first.
-const RIPPLE_PRIORITY: readonly RippleType[] = ["touch", "mouth", "rain"];
+const RIPPLE_PRIORITY: readonly RippleType[] = ["touch", "mouth", "wake", "rain"];
 
 // The vertex transform below is mirrored by duckweedVertexWorld and
 // duckweedRippleDisplacement in duckweed-geometry.ts. Keep in sync.
@@ -291,7 +291,9 @@ export class DuckweedPass {
           ? response.touchWeight
           : type === "mouth"
             ? response.mouthWeight
-            : response.rainWeight;
+            : type === "wake"
+              ? response.wakeWeight
+              : response.rainWeight;
     }
 
     // Highest-priority types first, so overflow drops rain before touch.

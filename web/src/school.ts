@@ -5,7 +5,11 @@ import {
   MAX_FISH,
   SPINE_NODES,
 } from "./config";
+import { Crabs } from "./crabs";
+import { DuckFamilies } from "./ducks";
+import { Frogs } from "./frogs";
 import { Koi, SwimState } from "./koi";
+import { ShrimpSchool } from "./shrimp";
 import { TinyFishSchools } from "./tiny-fish";
 import {
   add,
@@ -28,6 +32,10 @@ export class School {
   public readonly fish: Koi[] = Array.from({ length: MAX_FISH }, () => new Koi());
   public readonly ripples = new RippleSystem();
   public readonly tinyFish = new TinyFishSchools();
+  public readonly ducks = new DuckFamilies();
+  public readonly crabs = new Crabs();
+  public readonly shrimp = new ShrimpSchool();
+  public readonly frogs = new Frogs();
 
   public count: number = FISH.initialCount;
   public targetActive = false;
@@ -88,6 +96,10 @@ export class School {
     this.target.x *= scaleX;
     this.target.y *= scaleY;
     this.tinyFish.resize(scaleX, scaleY);
+    this.ducks.resize(scaleX, scaleY);
+    this.crabs.resize(scaleX, scaleY);
+    this.shrimp.resize(scaleX, scaleY);
+    this.frogs.resize(scaleX, scaleY);
     for (const ripple of this.ripples.instances) {
       ripple.center.x *= scaleX;
       ripple.center.y *= scaleY;
@@ -98,6 +110,10 @@ export class School {
     this.random.state = 0x00c0ffee;
     this.fish.forEach((fish, index) => fish.reset(index, this.random));
     this.tinyFish.reset();
+    this.ducks.reset();
+    this.crabs.reset();
+    this.shrimp.reset();
+    this.frogs.reset();
     this.ripples.reset();
     this.targetActive = false;
   }
@@ -127,6 +143,10 @@ export class School {
       fish.callResponseAge = 0;
     }
     this.tinyFish.fleeFrom(point);
+    this.ducks.callTo(point);
+    this.crabs.fleeFrom(point);
+    this.shrimp.fleeFrom(point);
+    this.frogs.startleFrom(point);
     this.ripples.trigger("touch", point);
   }
 
@@ -139,6 +159,10 @@ export class School {
       this.enterState(fish, SwimState.Burst);
     }
     this.targetActive = false;
+    this.ducks.scatter();
+    this.crabs.startle();
+    this.shrimp.startle();
+    this.frogs.startle();
   }
 
   public update(dt: number, time: number): void {
@@ -176,6 +200,10 @@ export class School {
       this.integrate(fish, desired[index], desiredSpeed[index], dt);
     }
     this.tinyFish.update(dt, time);
+    this.ducks.update(dt, time, this.ripples);
+    this.crabs.update(dt);
+    this.shrimp.update(dt);
+    this.frogs.update(dt, time, this.ripples);
 
     this.ripples.update(dt);
   }

@@ -70,12 +70,14 @@ import {
   frameRateOption,
   isFrameRateCap,
   loadPerformancePrefs,
+  PERFORMANCE_STORAGE_KEY,
   savePerformancePrefs,
   type PerformancePrefs,
 } from "./performance-prefs";
 import { connectSettingsEffects } from "./settings/effects";
-import { connectPersistence, loadInto } from "./settings/persistence";
-import { useSettingsMeta } from "./settings/react";
+import { connectPersistence, loadInto, SETTINGS_STORAGE_KEY } from "./settings/persistence";
+import { definition } from "./settings/definition";
+import { useSetting, useSettingsMeta } from "./settings/react";
 import { settings } from "./settings/store";
 import type { SectionId } from "./settings/definition";
 import { School } from "./school";
@@ -85,6 +87,13 @@ import {
   WEATHER_PRESETS,
   type WeatherPresetId,
 } from "./weather";
+import {
+  onHostMessage,
+  postToHost,
+  VISITOR_KINDS,
+  WALLPAPER_MODE,
+  wallpaperRenderSize,
+} from "./wallpaper";
 
 interface SceneStats {
   koi: number;
@@ -111,6 +120,7 @@ connectPersistence(settings);
 
 function pondRenderSize(display: HTMLElement): { width: number; height: number } {
   const { width, height } = display.getBoundingClientRect();
+  if (WALLPAPER_MODE) return wallpaperRenderSize(CANVAS, width, height);
   const portrait =
     window.matchMedia("(max-width: 700px) and (orientation: portrait)").matches &&
     width > 0 &&
@@ -174,7 +184,7 @@ export function App() {
   const ambientModeRef = useRef(false);
   const soundEnabledRef = useRef<boolean>(AUDIO.defaultEnabled);
   const [stats, setStats] = useState<SceneStats>(emptyStats);
-  const [showInterface, setShowInterface] = useState(true);
+  const [showInterface, setShowInterface] = useState(!WALLPAPER_MODE);
   const [ambientMode, setAmbientMode] = useState(false);
   const [ambientControlsVisible, setAmbientControlsVisible] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -182,7 +192,7 @@ export function App() {
   const [frameRateMenuOpen, setFrameRateMenuOpen] = useState(false);
   const [performancePrefs, setPerformancePrefs] =
     useState<PerformancePrefs>(loadPerformancePrefs);
-  const frameRateCap = effectiveFrameRate(performancePrefs, ambientMode);
+  const frameRateCap = effectiveFrameRate(performancePrefs, ambientMode || WALLPAPER_MODE);
   // The render loop reads the cap from a ref so changing it never re-runs the
   // runtime effect (which would dispose and recreate the renderer).
   const frameRateCapRef = useRef(frameRateCap);
@@ -191,6 +201,10 @@ export function App() {
   );
   const settingsMeta = useSettingsMeta();
   const { weather: weatherPreset, rain: rainEnabled, canUndo } = settingsMeta;
+  const [duckCount] = useSetting<number>(["ducks", "visibleCount"]);
+  const [crabCount] = useSetting<number>(["crabs", "visibleCount"]);
+  const [shrimpCount] = useSetting<number>(["shrimp", "visibleCount"]);
+  const [frogCount] = useSetting<number>(["frogs", "visibleCount"]);
   const [selectedFamily, setSelectedFamily] = useState(0);
   const [previewFamily, setPreviewFamily] = useState<number | null>(null);
   const previewFamilyRef = useRef<number | null>(null);
@@ -251,6 +265,15 @@ export function App() {
     const next: PerformancePrefs = { version: 1, frameRate: value, explicit: true };
     setPerformancePrefs(next);
     savePerformancePrefs(next);
+  }, []);
+
+  // Another window on this origin picked a frame rate (see connectPersistence).
+  useEffect(() => {
+    const onStorage = (event: StorageEvent): void => {
+      if (event.key === PERFORMANCE_STORAGE_KEY) setPerformancePrefs(loadPerformancePrefs());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const toggleAmbientMode = useCallback(async () => {
@@ -503,8 +526,14 @@ export function App() {
     let accumulator = 0;
     let simulationTime = 0;
     let previousTime = performance.now();
+    let paused = false;
+    let renderedFrames = 0;
     const frameLimiter = createFrameLimiter();
     const animate = (now: number): void => {
+      if (paused) {
+        animationFrame = 0;
+        return;
+      }
       const cap = frameRateOption(frameRateCapRef.current);
       if (!frameLimiter.shouldRender(now, cap.fps)) {
         // previousTime only advances on rendered frames, so the accumulator
@@ -521,6 +550,7 @@ export function App() {
       }
 
       renderer.draw(school, simulationTime, runtime.showDebug);
+      renderedFrames += 1;
       animationFrame = requestAnimationFrame(animate);
     };
 
@@ -557,11 +587,31 @@ export function App() {
       setStats(sceneStats(runtime));
     };
 
+    // Wallpaper mode: the shell pauses the pond while it's covered.
+    const disconnectHost = onHostMessage((message) => {
+      if (message.type !== "paused" || message.value === paused) return;
+      paused = message.value;
+      if (!paused && animationFrame === 0) {
+        previousTime = performance.now();
+        animationFrame = requestAnimationFrame(animate);
+      }
+    });
+
+    // Wallpaper mode: the shell's resource monitor shows the real frame rate.
+    const statsTimer = WALLPAPER_MODE
+      ? window.setInterval(() => {
+          postToHost({ type: "stats", fps: renderedFrames });
+          renderedFrames = 0;
+        }, 1000)
+      : 0;
+
     window.addEventListener("keydown", handleKeyDown);
     setStats(sceneStats(runtime));
     animationFrame = requestAnimationFrame(animate);
 
     return () => {
+      window.clearInterval(statsTimer);
+      disconnectHost();
       cancelAnimationFrame(animationFrame);
       disconnectEffects();
       resizeObserver.disconnect();
@@ -571,26 +621,84 @@ export function App() {
     };
   }, [changeKoiCount, toggleAmbientMode]);
 
-  const callFish = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
+  const callFishAt = useCallback((clientX: number, clientY: number): void => {
     const runtime = runtimeRef.current;
-    if (!runtime) return;
-    const bounds = event.currentTarget.getBoundingClientRect();
+    const canvas = canvasRef.current;
+    if (!runtime || !canvas) return;
+    const bounds = canvas.getBoundingClientRect();
     runtime.school.callTo(
       vec(
         clamp(
-          ((event.clientX - bounds.left) / bounds.width) * CANVAS_WIDTH,
+          ((clientX - bounds.left) / bounds.width) * CANVAS_WIDTH,
           0,
           CANVAS_WIDTH,
         ),
         clamp(
-          ((event.clientY - bounds.top) / bounds.height) * CANVAS_HEIGHT,
+          ((clientY - bounds.top) / bounds.height) * CANVAS_HEIGHT,
           0,
           CANVAS_HEIGHT,
         ),
       ),
     );
     setStats(sceneStats(runtime));
+  }, []);
+
+  const callFish = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
+    callFishAt(event.clientX, event.clientY);
   };
+
+  // Wallpaper mode: the shell forwards desktop clicks and tray-menu picks.
+  useEffect(() => {
+    return onHostMessage((message) => {
+      switch (message.type) {
+        case "call":
+          callFishAt(message.x * window.innerWidth, message.y * window.innerHeight);
+          break;
+        case "scatter":
+          scatter();
+          break;
+        case "sound":
+          setAmbientSoundEnabled(message.value);
+          break;
+        case "weather":
+          if (WEATHER_PRESETS.some((preset) => preset.id === message.value)) changeWeather(message.value);
+          break;
+        case "rain":
+          handleRainChange(message.value);
+          break;
+        case "koi":
+          settings.set(["koi", "initialCount"], clamp(Math.round(message.value), 1, FISH.maximumCount));
+          break;
+        case "fps":
+          changeFrameRate(message.value);
+          break;
+        case "resync":
+          // The storage listeners re-read localStorage themselves.
+          for (const key of [SETTINGS_STORAGE_KEY, PERFORMANCE_STORAGE_KEY]) {
+            window.dispatchEvent(new StorageEvent("storage", { key }));
+          }
+          break;
+        case "visitor":
+          // Switching a visitor on brings back its default number.
+          if (VISITOR_KINDS.includes(message.kind)) {
+            const count = definition.children[message.kind].children.visibleCount.default;
+            settings.set([message.kind, "visibleCount"], message.value ? count : 0);
+          }
+          break;
+      }
+    });
+  }, [callFishAt, scatter, setAmbientSoundEnabled, changeWeather, handleRainChange, changeFrameRate]);
+
+  useEffect(() => {
+    postToHost({
+      type: "state",
+      weather: weatherPreset,
+      rain: rainEnabled,
+      koi: stats.koi,
+      fps: frameRateCap,
+      visitors: { ducks: duckCount, crabs: crabCount, shrimp: shrimpCount, frogs: frogCount },
+    });
+  }, [weatherPreset, rainEnabled, stats.koi, frameRateCap, duckCount, crabCount, shrimpCount, frogCount]);
 
   const revealHiddenInterfaceOnMobile = (
     event: ReactPointerEvent<HTMLElement>,
@@ -610,7 +718,7 @@ export function App() {
   return (
     <main
       ref={stageRef}
-      className={`stage${ambientMode ? " stage--ambient" : ""}${
+      className={`stage${WALLPAPER_MODE ? " stage--wallpaper" : ""}${ambientMode ? " stage--ambient" : ""}${
         ambientUiHidden
           ? " stage--ambient-idle"
           : ""

@@ -169,4 +169,32 @@ describe("SettingsStore", () => {
     store.set(["pond-bed", "deepColor"], [0.2, 0.3, 0.4]);
     expect(store.live["pond-bed"].deepColor).toBe(deepColor);
   });
+
+  it("replaceFromSaved applies another window's settings and refreshes only changed sections", () => {
+    const other = new SettingsStore();
+    other.set(["koi", "initialCount"], 22);
+    const persist = vi.fn();
+    store.onPersistRequested(persist);
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.replaceFromSaved(other.exportOverrides(), "sunny", false);
+
+    expect(store.live.koi.initialCount).toBe(22);
+    expect(listener).toHaveBeenCalledTimes(1);
+    const touched = listener.mock.calls[0][0].map((change: { path: unknown[] }) => change.path[0]);
+    expect(new Set(touched)).toEqual(new Set(["koi"]));
+    expect(store.meta().canUndo).toBe(false);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("replaceFromSaved syncs weather and rain, and is a no-op when nothing changed", () => {
+    store.replaceFromSaved({}, "moonlight", true);
+    expect(store.meta()).toMatchObject({ weather: "moonlight", rain: true });
+
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.replaceFromSaved({}, "moonlight", true);
+    expect(listener).not.toHaveBeenCalled();
+  });
 });

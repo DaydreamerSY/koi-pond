@@ -411,6 +411,12 @@ const ripples = group(
         strengthFalloff: 0.65, lifetime: 0.9, startRadius: 1.2, expansionSpeed: 17,
         distortion: 10.4, bandSharpness: 0.7, fadeStart: 0.25, strengthDecay: 0.45,
       }),
+      // The trail of rings a paddling duck leaves behind it.
+      wake: rippleType({
+        maximumActive: 20, ripplesPerEvent: 1, intervalSeconds: 0.1, initialStrength: 0.42,
+        strengthFalloff: 0.7, lifetime: 1.15, startRadius: 2, expansionSpeed: 12,
+        distortion: 6.5, bandSharpness: 0.55, fadeStart: 0.2, strengthDecay: 0.5,
+      }),
     }),
     rainEmitter: group({
       dropsPerSecond: num({ default: 12, min: 0, max: 200, step: 1 }),
@@ -634,7 +640,7 @@ const duckweedRippleResponse = group(
   {
     enabled: bool({
       default: true,
-      description: "Leaves drift away from touch, mouth, and rain ripples as the ring passes under them.",
+      description: "Leaves drift away from touch, mouth, rain, and duck-wake ripples as the ring passes under them.",
     }),
     strength: num({
       default: 0.8,
@@ -679,6 +685,7 @@ const duckweedRippleResponse = group(
     touchWeight: num({ default: 0.8, min: 0, max: 2, step: 0.05 }),
     mouthWeight: num({ default: 0.4, min: 0, max: 2, step: 0.05 }),
     rainWeight: num({ default: 1.4, min: 0, max: 2, step: 0.05 }),
+    wakeWeight: num({ default: 0.9, min: 0, max: 2, step: 0.05 }),
   },
   { label: "Ripple response", effect: "duckweed:live" },
 );
@@ -840,6 +847,194 @@ const butterflySpawns = collection(butterflySpawnItem, [
   },
 });
 
+// ---- pond visitors: ducks, crabs, shrimp, frogs ------------------------
+// Behavior and look are read live every frame; only the fields that change
+// how many there are (or their spawn-time size) respawn them.
+
+const duckPalette = group({
+  name: text({ default: "", hidden: true }),
+  body: color({ default: 0xffffff }),
+  wing: color({ default: 0xffffff }),
+  accent: color({ default: 0xffffff }),
+  head: color({ default: 0xffffff }),
+  neck: color({ default: 0xffffff }),
+  beak: color({ default: 0xffffff }),
+  feet: color({ default: 0xffffff }),
+  tail: color({ default: 0xffffff }),
+});
+
+const ducks = group(
+  {
+    visibleCount: num({ default: 2, min: 0, max: 8, step: 1, int: true, label: "Duck count", effect: "ducks:respawn" }),
+    bodyLength: num({ default: 18, min: 4, max: 40, step: 0.5, unit: "px" }),
+    bodyWidthRatio: num({ default: 0.6, min: 0.3, max: 1, step: 0.01 }),
+    ducklingScale: num({ default: 0.56, min: 0.2, max: 1, step: 0.01 }),
+    ducklingSpacing: num({ default: 10.5, min: 2, max: 30, step: 0.5, unit: "px" }),
+    cruiseSpeed: range({ default: [5, 8.5], min: 0, max: 60, step: 0.5 }),
+    hurrySpeed: num({ default: 15, min: 0, max: 80, step: 0.5, unit: "px/s" }),
+    fleeSpeed: num({ default: 27, min: 0, max: 100, step: 0.5, unit: "px/s" }),
+    turnRate: num({ default: 1.5, min: 0, max: 10, step: 0.05, unit: "rad/s" }),
+    edgeMargin: num({ default: 20, min: 0, max: 100, step: 1, unit: "px" }),
+    leafClearance: num({ default: 4, min: 0, max: 30, step: 0.5, unit: "px" }),
+    callRadius: num({
+      default: 170, min: 0, max: 600, step: 5, unit: "px",
+      description: "Ducks paddle over to a click this close, hoping for food.",
+    }),
+    paddleDuration: range({ default: [5, 12], min: 0, max: 60, step: 0.5 }),
+    restDuration: range({ default: [2.5, 7], min: 0, max: 60, step: 0.5 }),
+    dabbleChance: num({ default: 0.35, min: 0, max: 1, step: 0.01, description: "Chance to tip the head under for food after paddling." }),
+    preenChance: num({ default: 0.25, min: 0, max: 1, step: 0.01, description: "Chance to stop and preen after paddling." }),
+    wakeInterval: num({ default: 0.42, min: 0.05, max: 3, step: 0.01, unit: "s" }),
+    shadow: group({
+      color: color({ default: 0x0a2b26 }),
+      opacity: num({ default: 0.42, min: 0, max: 1, step: 0.01 }),
+      offset: offsetGroup(4.8, 10.4),
+    }),
+    palettes: list(duckPalette, [
+      { name: "White", body: 0xf3efe2, wing: 0xdcd5c3, accent: 0xdcd5c3, head: 0xfaf7ee, neck: 0xfaf7ee, beak: 0xf2a23a, feet: 0xe8882f, tail: 0xe4ddcc },
+      { name: "Mallard drake", body: 0xa59886, wing: 0x7d6c5a, accent: 0x3e60b4, head: 0x2f6c4b, neck: 0xf0ede4, beak: 0xd8c24c, feet: 0xe0812f, tail: 0x3a3934 },
+      { name: "Mallard hen", body: 0x93714d, wing: 0x735537, accent: 0x3e60b4, head: 0x80603f, neck: 0x80603f, beak: 0xd98b3b, feet: 0xdf8a3a, tail: 0x6b4f35 },
+    ]),
+    ducklingPalette: group({
+      body: color({ default: 0xfbe891 }),
+      wing: color({ default: 0xeed36e }),
+      accent: color({ default: 0xeed36e }),
+      head: color({ default: 0xfdf0a6 }),
+      neck: color({ default: 0xfdf0a6 }),
+      beak: color({ default: 0xd98a3a }),
+      feet: color({ default: 0xd98a3a }),
+      tail: color({ default: 0xf1d779 }),
+    }),
+  },
+  { label: "Ducks", effect: "ducks:live" },
+);
+
+const duckSpawnItem = group({
+  x: num({ default: 0, min: -80, max: 560, step: 1 }),
+  y: num({ default: 0, min: -80, max: 350, step: 1 }),
+  heading: num({ default: 0, min: -TAU, max: TAU, step: 0.01 }),
+  palette: index({ default: 0, of: ["ducks", "palettes"] }),
+  ducklings: num({ default: 0, min: 0, max: 8, step: 1, int: true }),
+});
+
+const duckSpawns = collection(duckSpawnItem, [
+  { x: 214, y: 154, heading: -0.35, palette: 0, ducklings: 4 },
+  { x: 318, y: 92, heading: 2.7, palette: 1, ducklings: 0 },
+  { x: 168, y: 112, heading: 0.9, palette: 2, ducklings: 2 },
+  { x: 300, y: 205, heading: 3.6, palette: 0, ducklings: 0 },
+], {
+  label: "Duck spawns",
+  countFrom: ["ducks", "visibleCount"],
+  max: 16,
+  effect: "ducks:respawn",
+  create: (live) => {
+    const l = live as { ducks: ValueOf<typeof ducks> };
+    const randomInt = (min: number, maxExclusive: number): number =>
+      Math.floor(min + Math.random() * (maxExclusive - min));
+    return {
+      x: randomInt(140, LAYOUT.width - 139),
+      y: randomInt(70, LAYOUT.height - 69),
+      heading: Number((Math.random() * TAU).toFixed(2)),
+      palette: randomInt(0, l.ducks.palettes.length),
+      ducklings: randomInt(0, 4),
+    };
+  },
+});
+
+const crabPalette = group({
+  name: text({ default: "", hidden: true }),
+  shell: color({ default: 0xffffff }),
+  shellLight: color({ default: 0xffffff }),
+  claw: color({ default: 0xffffff }),
+  leg: color({ default: 0xffffff }),
+  eye: color({ default: 0xffffff }),
+});
+
+const crabs = group(
+  {
+    visibleCount: num({ default: 3, min: 0, max: 16, step: 1, int: true, label: "Crab count", effect: "crabs:respawn" }),
+    shellWidth: range({ default: [7, 9.5], min: 2, max: 20, step: 0.1, effect: "crabs:respawn" }),
+    walkSpeed: range({ default: [3, 6.5], min: 0, max: 40, step: 0.5 }),
+    fleeSpeed: num({ default: 20, min: 0, max: 80, step: 0.5, unit: "px/s" }),
+    fleeRadius: num({ default: 44, min: 0, max: 200, step: 1, unit: "px", description: "Crabs scuttle away from a click this close." }),
+    walkDuration: range({ default: [1.5, 4.5], min: 0, max: 30, step: 0.1 }),
+    idleDuration: range({ default: [2, 7], min: 0, max: 30, step: 0.1 }),
+    clawWaveChance: num({ default: 0.35, min: 0, max: 1, step: 0.01 }),
+    edgeMargin: num({ default: 14, min: 0, max: 100, step: 1, unit: "px" }),
+    depth: num({
+      default: 0.3, min: 0, max: 1, step: 0.01,
+      description: "How deep they look: tinted and dimmed like deep koi (see Koi › depth).",
+    }),
+    shadowOpacity: num({ default: 0.35, min: 0, max: 1, step: 0.01 }),
+    palettes: list(crabPalette, [
+      { name: "River red", shell: 0xe0623f, shellLight: 0xf59468, claw: 0xf07049, leg: 0xc4573b, eye: 0x1b1916 },
+      { name: "Mud brown", shell: 0xb08a52, shellLight: 0xcfab74, claw: 0xc79a5c, leg: 0x94733f, eye: 0x1b1916 },
+      { name: "Slate blue", shell: 0x6f97a8, shellLight: 0x9cc0cc, claw: 0xe0845a, leg: 0x5c8091, eye: 0x1b1916 },
+    ]),
+  },
+  { label: "Crabs", effect: "crabs:live" },
+);
+
+const shrimpPalette = group({
+  name: text({ default: "", hidden: true }),
+  body: color({ default: 0xffffff }),
+  light: color({ default: 0xffffff }),
+  stripe: color({ default: 0xffffff }),
+  antenna: color({ default: 0xffffff }),
+  eye: color({ default: 0xffffff }),
+});
+
+const shrimp = group(
+  {
+    visibleCount: num({ default: 7, min: 0, max: 32, step: 1, int: true, label: "Shrimp count", effect: "shrimp:respawn" }),
+    bodyLength: range({ default: [7.5, 10], min: 2, max: 24, step: 0.1, effect: "shrimp:respawn" }),
+    cruiseSpeed: range({ default: [1.5, 4], min: 0, max: 30, step: 0.1 }),
+    dartSpeed: num({ default: 70, min: 0, max: 200, step: 1, unit: "px/s" }),
+    dartChance: num({ default: 0.03, min: 0, max: 1, step: 0.005, unit: "/s", description: "How often a calm shrimp flicks its tail and darts backward." }),
+    fleeRadius: num({ default: 50, min: 0, max: 200, step: 1, unit: "px", description: "Shrimp dart away from a click this close." }),
+    forageDuration: range({ default: [2, 6], min: 0, max: 30, step: 0.1 }),
+    restDuration: range({ default: [1, 4], min: 0, max: 30, step: 0.1 }),
+    edgeMargin: num({ default: 12, min: 0, max: 100, step: 1, unit: "px" }),
+    depth: num({ default: 0.25, min: 0, max: 1, step: 0.01 }),
+    shadowOpacity: num({ default: 0.25, min: 0, max: 1, step: 0.01 }),
+    palettes: list(shrimpPalette, [
+      { name: "Cherry", body: 0xf05a46, light: 0xff9a7c, stripe: 0xffe0cc, antenna: 0xe0786a, eye: 0x161412 },
+      { name: "Amber", body: 0xf2a34c, light: 0xffc985, stripe: 0xfff0cf, antenna: 0xd99b5c, eye: 0x161412 },
+      { name: "Ghost", body: 0xcfe3d9, light: 0xf0faf5, stripe: 0xffffff, antenna: 0xb7cfc4, eye: 0x161412 },
+    ]),
+  },
+  { label: "Shrimp", effect: "shrimp:live" },
+);
+
+const frogPalette = group({
+  name: text({ default: "", hidden: true }),
+  body: color({ default: 0xffffff }),
+  back: color({ default: 0xffffff }),
+  spot: color({ default: 0xffffff }),
+  belly: color({ default: 0xffffff }),
+  eye: color({ default: 0xffffff }),
+});
+
+const frogs = group(
+  {
+    visibleCount: num({ default: 2, min: 0, max: 8, step: 1, int: true, label: "Frog count", effect: "frogs:respawn" }),
+    bodyLength: num({ default: 9.5, min: 3, max: 20, step: 0.1, unit: "px" }),
+    sitDuration: range({ default: [6, 18], min: 0, max: 60, step: 0.5 }),
+    croakChance: num({ default: 0.45, min: 0, max: 1, step: 0.01, description: "Chance a sitting frog puffs its throat to croak." }),
+    hopRange: num({ default: 70, min: 0, max: 300, step: 1, unit: "px", description: "Farthest lotus leaf a frog leaps to; beyond it, it swims." }),
+    hopSeconds: num({ default: 0.55, min: 0.1, max: 3, step: 0.01 }),
+    hopHeight: num({ default: 7, min: 0, max: 40, step: 0.5, unit: "px" }),
+    swimChance: num({ default: 0.3, min: 0, max: 1, step: 0.01, description: "Chance to dive in for a swim instead of leaping to a leaf." }),
+    swimSpeed: num({ default: 9, min: 0, max: 60, step: 0.5, unit: "px/s" }),
+    startleRadius: num({ default: 60, min: 0, max: 300, step: 1, unit: "px", description: "Frogs leap into the water from a click this close." }),
+    palettes: list(frogPalette, [
+      { name: "Lime", body: 0x8fd14f, back: 0xb1e36a, spot: 0x4f9233, belly: 0xf1f3bd, eye: 0xf4c94a },
+      { name: "Brown", body: 0xb88d52, back: 0xd2ad70, spot: 0x7c5a31, belly: 0xf3e5bd, eye: 0xeaa53f },
+    ]),
+  },
+  { label: "Frogs", effect: "frogs:live" },
+);
+
 // ---- root ---------------------------------------------------------------
 
 export const definition = group({
@@ -858,6 +1053,11 @@ export const definition = group({
   "duckweed-patches": duckweedPatches,
   butterflies,
   "butterfly-spawns": butterflySpawns,
+  ducks,
+  "duck-spawns": duckSpawns,
+  crabs,
+  shrimp,
+  frogs,
 });
 
 export type SettingsValues = ValueOf<typeof definition>;
@@ -871,6 +1071,8 @@ export type LotusLeafSetting = ValueOf<typeof lotusLeafItem>;
 export type LotusFlowerSetting = ValueOf<typeof lotusFlowerItem>;
 export type DuckweedPatchSetting = ValueOf<typeof duckweedPatchItem>;
 export type ButterflySpawnSetting = ValueOf<typeof butterflySpawnItem>;
+export type DuckSpawnSetting = ValueOf<typeof duckSpawnItem>;
+export type DuckPaletteSetting = ValueOf<typeof duckPalette>;
 export type Rgb = readonly [number, number, number];
 
 // Section-group labels used by the advanced-controls UI (was CONFIG_GROUPS).
@@ -888,6 +1090,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   { id: "lotus", title: "Lotus", description: "Leaves, flowers, palettes, and placement.", sectionIds: ["lotus", "lotus-leaves", "lotus-flowers"] },
   { id: "duckweed", title: "Duckweed", description: "Leaf appearance and floating patches.", sectionIds: ["duckweed", "duckweed-patches"] },
   { id: "butterflies", title: "Butterflies", description: "Flight behavior, colors, and spawn points.", sectionIds: ["butterflies", "butterfly-spawns"] },
+  { id: "visitors", title: "Pond visitors", description: "Ducks, crabs, shrimp, and frogs that share the pond.", sectionIds: ["ducks", "duck-spawns", "crabs", "shrimp", "frogs"] },
 ];
 
 export const SECTION_TITLES: Record<SectionId, string> = {
@@ -906,6 +1109,11 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   "duckweed-patches": "Duckweed patches",
   butterflies: "Butterflies",
   "butterfly-spawns": "Butterfly spawns",
+  ducks: "Ducks",
+  "duck-spawns": "Duck spawns",
+  crabs: "Crabs",
+  shrimp: "Shrimp",
+  frogs: "Frogs",
 };
 
 export const SECTION_DESCRIPTIONS: Record<SectionId, string> = {
@@ -916,7 +1124,7 @@ export const SECTION_DESCRIPTIONS: Record<SectionId, string> = {
   "tiny-fish-schools": "Population, origin, spread, and palette per school.",
   "pond-bed": "Base water-bed colors, grain, and edge depth.",
   water: "Current layers, distortion, and tint.",
-  ripples: "Touch, rain, and koi-mouth ripples plus rainfall frequency.",
+  ripples: "Touch, rain, koi-mouth, and duck-wake ripples plus rainfall frequency.",
   lotus: "Leaf and flower geometry, drift, shadows, and palettes.",
   "lotus-leaves": "Position, scale, rotation, and palette for every leaf.",
   "lotus-flowers": "Leaf attachment, position, size, and palette.",
@@ -924,4 +1132,9 @@ export const SECTION_DESCRIPTIONS: Record<SectionId, string> = {
   "duckweed-patches": "Population, spread, and origin of each patch.",
   butterflies: "Flight, flower visits, proportions, and colors.",
   "butterfly-spawns": "Initial position, phase, and palette per butterfly.",
+  ducks: "Paddling, feeding, wakes, proportions, and colors.",
+  "duck-spawns": "Starting position, heading, palette, and ducklings per duck.",
+  crabs: "Sideways walking, claw waving, flee distance, and colors.",
+  shrimp: "Foraging, tail-flick darts, flee distance, and colors.",
+  frogs: "Sitting on lotus leaves, croaking, leaping, swimming, and colors.",
 };

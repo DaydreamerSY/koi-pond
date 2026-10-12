@@ -121,6 +121,11 @@ export function QuickSettings({
   const [visiblePatchCount, setVisiblePatchCount] = useSetting<number>(["duckweed", "visiblePatchCount"]);
   const [visibleButterflyCount, setVisibleButterflyCount] = useSetting<number>(["butterflies", "visibleCount"]);
 
+  const [duckCount, setDuckCount] = useSetting<number>(["ducks", "visibleCount"]);
+  const [crabCount, setCrabCount] = useSetting<number>(["crabs", "visibleCount"]);
+  const [shrimpCount, setShrimpCount] = useSetting<number>(["shrimp", "visibleCount"]);
+  const [frogCount, setFrogCount] = useSetting<number>(["frogs", "visibleCount"]);
+
   return (
     <div className="settings-quick">
       <section className="settings-quick__section" aria-labelledby="quick-koi-heading">
@@ -236,6 +241,45 @@ export function QuickSettings({
           min={0}
           max={12}
           onChange={setVisibleButterflyCount}
+        />
+      </section>
+
+      <section className="settings-quick__section" aria-labelledby="quick-visitors-heading">
+        <div className="settings-quick__heading">
+          <div className="settings-quick__heading-row"><h3 id="quick-visitors-heading">Pond visitors</h3><button type="button" className="settings-section-reset" onClick={() => onResetSection(["ducks", "duck-spawns", "crabs", "shrimp", "frogs"])}><RotateCcw aria-hidden="true" /> Reset</button></div>
+          <p>Ducks paddle over when you click; everything else would rather not be disturbed.</p>
+        </div>
+        <SettingSlider
+          label="Ducks"
+          description="Each duck may lead a line of ducklings (see Duck spawns)."
+          value={duckCount}
+          min={0}
+          max={8}
+          onChange={setDuckCount}
+        />
+        <SettingSlider
+          label="Crabs"
+          description="Sideways walkers on the pond bed."
+          value={crabCount}
+          min={0}
+          max={16}
+          onChange={setCrabCount}
+        />
+        <SettingSlider
+          label="Shrimp"
+          description="Small foragers that flick backward when startled."
+          value={shrimpCount}
+          min={0}
+          max={32}
+          onChange={setShrimpCount}
+        />
+        <SettingSlider
+          label="Frogs"
+          description="Croakers that hop between the lotus leaves."
+          value={frogCount}
+          min={0}
+          max={8}
+          onChange={setFrogCount}
         />
       </section>
 
