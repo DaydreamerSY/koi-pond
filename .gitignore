@@ -1,0 +1,21 @@
+# Build output
+dist/
+dist-mac/
+app/bin/
+app/obj/
+
+# The pond's own dependencies and build (web/.gitignore covers these too)
+web/node_modules/
+web/dist/
+
+# Node.js that mac/build.sh downloads when the Mac has none
+.cache/
+
+# Editors and operating systems
+.vs/
+.vscode/
+.idea/
+*.user
+.DS_Store
+Thumbs.db
+*.log
