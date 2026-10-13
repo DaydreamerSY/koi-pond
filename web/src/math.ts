@@ -23,6 +23,27 @@ export const clamp = (value: number, low: number, high: number): number =>
   Math.max(low, Math.min(value, high));
 export const wrapAngle = (angle: number): number => Math.atan2(Math.sin(angle), Math.cos(angle));
 
+const unitCircles = new Map<number, Float64Array>();
+
+/**
+ * cos and sin of the `segments + 1` angles a circle of that many segments
+ * steps through (`[cos0, sin0, cos1, sin1, …]`), worked out once instead of
+ * for every circle drawn every frame. Same expressions, so the same values.
+ */
+export function unitCircle(segments: number): Float64Array {
+  let table = unitCircles.get(segments);
+  if (!table) {
+    table = new Float64Array((segments + 1) * 2);
+    for (let index = 0; index <= segments; index += 1) {
+      const angle = (index / segments) * Math.PI * 2;
+      table[index * 2] = Math.cos(angle);
+      table[index * 2 + 1] = Math.sin(angle);
+    }
+    unitCircles.set(segments, table);
+  }
+  return table;
+}
+
 export class XorShift32 {
   public state: number;
 

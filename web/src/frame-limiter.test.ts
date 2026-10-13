@@ -87,6 +87,65 @@ describe("frame limiter", () => {
     expect(after).toEqual([false, true, false, true, false, true]);
   });
 
+  describe("sleeping between frames", () => {
+    /**
+     * Runs the render loop the way app.tsx does: after each tick it sleeps for
+     * sleepTime() (the timer firing `lateMs` late), then waits for the next
+     * display refresh. Returns the refreshes that rendered and how many rAF
+     * ticks it took.
+     */
+    function loop(hz: number, fps: number | null, refreshes: number, lateMs = 0, drawMs = 3) {
+      const limiter = createFrameLimiter();
+      const period = 1000 / hz;
+      const nextRefresh = (time: number): number => Math.ceil(time / period - 1e-9);
+      const rendered: number[] = [];
+      let ticks = 0;
+      let refresh = 1;
+      while (refresh < refreshes) {
+        ticks += 1;
+        const now = refresh * period;
+        const render = limiter.shouldRender(now, fps);
+        if (render) rendered.push(refresh);
+        const after = now + (render ? drawMs : 0.2);
+        const sleep = limiter.sleepTime(after, fps);
+        if (sleep > 0) {
+          const fired = after + sleep + lateMs;
+          limiter.noteWakeLateness(lateMs);
+          refresh = Math.max(refresh + 1, nextRefresh(fired));
+        } else {
+          refresh += 1;
+        }
+      }
+      return { rendered, ticks };
+    }
+
+    it("renders on the same refreshes as ticking every refresh", () => {
+      for (const [hz, fps] of [[60, 30], [144, 30], [164, 30], [120, 60], [75, 60], [60, 20], [240, 20]] as const) {
+        const awake = run(hz, fps, hz * 10 - 1, 1000 / hz).map((index) => index + 1);
+        const { rendered } = loop(hz, fps, hz * 10);
+        expect(rendered).toEqual(awake);
+      }
+    });
+
+    it("wakes far less often on a fast display", () => {
+      const { rendered, ticks } = loop(164, 30, 1640);
+      expect(rendered.length).toBeGreaterThan(295);
+      expect(ticks).toBeLessThan(rendered.length * 2.1);
+    });
+
+    it("never sleeps without a cap", () => {
+      const { rendered, ticks } = loop(144, null, 1440);
+      expect(ticks).toBe(rendered.length);
+      expect(ticks).toBe(1439);
+    });
+
+    it("holds the frame rate when timers fire late", () => {
+      const { rendered } = loop(144, 30, 1440, 8);
+      // 10 s at 30 fps; a late timer may only delay a frame, never drop it.
+      expect(rendered.length).toBeGreaterThanOrEqual(297);
+    });
+  });
+
   it("switches cap on the fly", () => {
     const limiter = createFrameLimiter();
     const period = 1000 / 60;

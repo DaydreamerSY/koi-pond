@@ -42,6 +42,11 @@ git diff 01e93a4 HEAD:web
   - Khi dừng, cá vẫn trôi rất chậm, đuôi đưa nhẹ, vây ngực quạt liên tục, giảm tốc êm thay vì phanh gấp.
   - "Xua đàn cá" làm cá lao đi và rẽ ngoặt, không còn quay ngoắt tại chỗ.
   - Chỉnh nhanh trong mục **Koi motion** của bảng cài đặt (độ vẫy đuôi, độ cong thân khi rẽ, độ gắt khi rẽ/quay đầu, chữ C tối đa, độ mượt), chi tiết hơn trong **Koi › Turning** và **Koi › Swimming**.
+- **Nhẹ máy hơn, hình vẫn y nguyên**:
+  - Khi giới hạn fps (mặc định 30), giữa hai khung hình hồ cá ngủ trên một bộ hẹn giờ rồi mới xin khung hình kế tiếp, thay vì thức dậy theo mọi nhịp quét của màn hình (144–165 Hz) chỉ để bỏ qua (`frame-limiter.ts`, `app.tsx`). Số lần đánh thức trình duyệt giảm khoảng một nửa (126 → 60 lần/giây trên màn 164 Hz), CPU giảm khoảng 25–35%, khung hình còn đều hơn trước.
+  - Bóng đổ một màu (lá sen, bèo, vịt, ếch, cua, tôm, bướm, cá nhỏ) được vẽ một lượt thay vì hai lượt mặt sau/mặt trước như three.js mặc định làm với vật thể trong suốt hai mặt; trước đây mỗi khung hình phải tính lại shader cho khoảng 22 lớp bóng (`forceSinglePass`).
+  - Hình tròn, elip tính sẵn bảng sin/cos và mỗi điểm viền chỉ tính một lần, không tạo đối tượng tạm; kết quả trùng khớp từng bit với cách cũ (`math.ts`, `surface-geometry.ts`, `fish-renderer.ts`).
+  - WebGL xin GPU tiết kiệm điện (`powerPreference: "low-power"`, máy hai GPU sẽ không phải đánh thức card rời) và bỏ bộ đệm độ sâu không dùng tới.
 - Nối các phần trên vào `app.tsx`, `school.ts`, `fish-renderer.ts`, `lotus-leaves.ts`, `butterflies.ts`, `settings/definition.ts`, `settings/effects.ts`, `quick-settings.tsx`, `styles.css`, `config.ts`, `surface-geometry.ts`.
 - Test mới: `src/pond-visitors.test.ts` (gồm cả lá sen), `src/koi-turning.test.ts`, `src/weather-cycle.test.ts`, và thêm test trong `store.test.ts`, `schema.test.ts`.
 - Thêm `package-lock.json` để cài đặt ổn định.
@@ -63,8 +68,8 @@ Build trước (xem [Build trên Windows](#build-trên-windows)), rồi chạy `
 | Menu khay → **Tài nguyên đang dùng…** (hoặc `KoiPaper.exe --resources`) | Xem trực tiếp CPU, RAM, GPU, VRAM của app và từng tiến trình WebView2, biểu đồ 2 phút, FPS thật của hồ cá và lý do đang tạm dừng (nếu có) |
 
 Tự động:
-- **Tự dừng** khi một cửa sổ phóng to hoặc app toàn màn hình (game, phim) che kín màn hình, hay khi khoá máy, để không tốn GPU/CPU. Tắt được trong menu.
-- Mặc định chạy **30 fps** (khoảng 3% CPU trên máy 12 luồng); đổi trong menu "Tốc độ khung hình".
+- **Tự dừng** khi một cửa sổ phóng to hoặc app toàn màn hình (game, phim) che kín màn hình, hay khi khoá máy, để không tốn GPU/CPU. Tắt được trong menu. Trong lúc dừng, hồ cá trả bớt bộ nhớ cho Windows (bộ nhớ riêng của tiến trình vẽ giảm khoảng 30 MB) và app gỡ hook chuột toàn hệ thống, nên khi chơi game mỗi cú di chuột không còn phải đi qua Koi Paper.
+- Mặc định chạy **30 fps** (khoảng 1–2% CPU trên máy 12 luồng); đổi trong menu "Tốc độ khung hình".
 - Mỗi màn hình có một hồ riêng; âm thanh chỉ phát ở màn hình chính.
 - Explorer khởi động lại, đổi độ phân giải hoặc cắm/rút màn hình thì hình nền tự dựng lại.
 - Thoát (hoặc app bị tắt ngang) thì desktop trở về hình nền cũ.

@@ -113,7 +113,6 @@ internal sealed class TrayApp : ApplicationContext
             return;
         }
 
-        clickHook = new DesktopClickHook(OnDesktopClick);
         Rebuild();
         watchTimer.Start();
 
@@ -195,6 +194,7 @@ internal sealed class TrayApp : ApplicationContext
         if (exiting) return;
 
         foreach (WallpaperWindow wallpaper in created) wallpaper.AttachTo(host);
+        UpdatePlayback();
         Log.Write($"Attached {created.Count} wallpaper(s) ({(host.IsChildLayout ? "24H2+" : "legacy")} desktop layout).");
     }
 
@@ -230,6 +230,17 @@ internal sealed class TrayApp : ApplicationContext
             wallpaper.SetPaused(wallpaper.PauseReason is not null);
             // One river is enough: only the main monitor's pond plays sound.
             wallpaper.SetSound(settings.Sound && !settings.Paused && !sessionLocked && wallpaper == SoundWallpaper);
+        }
+
+        // Every mouse event on the system (each move too) passes through a
+        // low-level hook, so only keep it while a pond can be clicked: not
+        // while a game or a maximized window covers every pond.
+        bool clickable = wallpapers.Any(wallpaper => wallpaper.IsAttached && !wallpaper.IsPaused);
+        if (clickable && clickHook is null) clickHook = new DesktopClickHook(OnDesktopClick);
+        else if (!clickable && clickHook is not null)
+        {
+            clickHook.Dispose();
+            clickHook = null;
         }
     }
 

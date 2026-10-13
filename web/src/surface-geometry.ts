@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./config";
+import { unitCircle } from "./math";
 
 export interface SurfacePoint {
   x: number;
@@ -9,6 +10,10 @@ export interface SurfacePoint {
 const DEFAULT_COLOR = new THREE.Color(0xffffff);
 
 export class SurfaceGeometryBatch {
+  // Reused for the rim points of circles and ellipses; point() copies them.
+  private readonly rimA: SurfacePoint = { x: 0, y: 0 };
+  private readonly rimB: SurfacePoint = { x: 0, y: 0 };
+
   private readonly positions: Float32Array;
   private readonly positionAttribute: THREE.BufferAttribute;
   private readonly colors?: Float32Array;
@@ -80,21 +85,18 @@ export class SurfaceGeometryBatch {
     color: THREE.Color = DEFAULT_COLOR,
     segments = 8,
   ): void {
+    const unit = unitCircle(segments);
+    let a = this.rimA;
+    let b = this.rimB;
+    a.x = center.x + unit[0] * radius;
+    a.y = center.y + unit[1] * radius;
     for (let index = 0; index < segments; index += 1) {
-      const angleA = (index / segments) * Math.PI * 2;
-      const angleB = ((index + 1) / segments) * Math.PI * 2;
-      this.triangle(
-        center,
-        {
-          x: center.x + Math.cos(angleA) * radius,
-          y: center.y + Math.sin(angleA) * radius,
-        },
-        {
-          x: center.x + Math.cos(angleB) * radius,
-          y: center.y + Math.sin(angleB) * radius,
-        },
-        color,
-      );
+      b.x = center.x + unit[index * 2 + 2] * radius;
+      b.y = center.y + unit[index * 2 + 3] * radius;
+      this.triangle(center, a, b, color);
+      const next = a;
+      a = b;
+      b = next;
     }
   }
 
@@ -108,17 +110,22 @@ export class SurfaceGeometryBatch {
     color: THREE.Color = DEFAULT_COLOR,
     segments = 10,
   ): void {
-    const pointAt = (angle: number): SurfacePoint => ({
-      x: center.x + forward.x * Math.cos(angle) * forwardRadius + side.x * Math.sin(angle) * sideRadius,
-      y: center.y + forward.y * Math.cos(angle) * forwardRadius + side.y * Math.sin(angle) * sideRadius,
-    });
+    const unit = unitCircle(segments);
+    const pointAt = (index: number, point: SurfacePoint): void => {
+      const cos = unit[index * 2];
+      const sin = unit[index * 2 + 1];
+      point.x = center.x + forward.x * cos * forwardRadius + side.x * sin * sideRadius;
+      point.y = center.y + forward.y * cos * forwardRadius + side.y * sin * sideRadius;
+    };
+    let a = this.rimA;
+    let b = this.rimB;
+    pointAt(0, a);
     for (let index = 0; index < segments; index += 1) {
-      this.triangle(
-        center,
-        pointAt((index / segments) * Math.PI * 2),
-        pointAt(((index + 1) / segments) * Math.PI * 2),
-        color,
-      );
+      pointAt(index + 1, b);
+      this.triangle(center, a, b, color);
+      const next = a;
+      a = b;
+      b = next;
     }
   }
 

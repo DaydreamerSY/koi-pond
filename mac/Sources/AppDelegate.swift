@@ -70,6 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             DispatchQueue.main.async { self?.desktopClicked(at: point) }
         }
         timer = Timer.scheduledTimer(timeInterval: 1, target: self, selector: #selector(updatePlayback), userInfo: nil, repeats: true)
+        // Lets macOS fold this check into wake-ups it makes anyway.
+        timer?.tolerance = 0.2
 
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(screensChanged), name: NSApplication.didChangeScreenParametersNotification, object: nil)

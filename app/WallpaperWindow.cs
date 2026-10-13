@@ -75,6 +75,7 @@ internal sealed class WallpaperWindow : NativeWindow, IDisposable
 
         CoreWebView2 core = controller.CoreWebView2;
         WebHost.Configure(core, wallpaper: true);
+        if (paused) SetMemoryTarget(CoreWebView2MemoryUsageTargetLevel.Low);
         core.WebMessageReceived += OnWebMessage;
         core.NavigationStarting += (_, _) => pageReady = false;
         core.ProcessFailed += (_, e) =>
@@ -113,7 +114,21 @@ internal sealed class WallpaperWindow : NativeWindow, IDisposable
     {
         if (paused == value) return;
         paused = value;
+        // A paused pond can give memory back (caches, garbage) while nobody sees it.
+        SetMemoryTarget(value ? CoreWebView2MemoryUsageTargetLevel.Low : CoreWebView2MemoryUsageTargetLevel.Normal);
         if (pageReady) Post(new { type = "paused", value });
+    }
+
+    private void SetMemoryTarget(CoreWebView2MemoryUsageTargetLevel level)
+    {
+        try
+        {
+            if (controller?.CoreWebView2 is { } core) core.MemoryUsageTargetLevel = level;
+        }
+        catch (InvalidOperationException)
+        {
+            // The WebView is shutting down.
+        }
     }
 
     public void SetSound(bool value)

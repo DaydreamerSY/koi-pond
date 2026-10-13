@@ -27,6 +27,7 @@ import {
   normalize,
   perpendicular,
   sub,
+  unitCircle,
   type Vec2,
 } from "./math";
 import { PondBedPass } from "./pond-bed";
@@ -84,6 +85,9 @@ class GeometryBatch {
   private cursor = 0;
   private previewOrigin: Vec2 | null = null;
   private previewScale = 1;
+  // Reused for the rim points of circles and ellipses; point() copies them.
+  private readonly rimA: Vec2 = { x: 0, y: 0 };
+  private readonly rimB: Vec2 = { x: 0, y: 0 };
 
   public constructor(
     private readonly geometry: THREE.BufferGeometry,
@@ -149,15 +153,18 @@ class GeometryBatch {
     color: THREE.Color = DEFAULT_COLOR,
     segments = 12,
   ): void {
+    const unit = unitCircle(segments);
+    let a = this.rimA;
+    let b = this.rimB;
+    a.x = center.x + unit[0] * radius;
+    a.y = center.y + unit[1] * radius;
     for (let index = 0; index < segments; index += 1) {
-      const angleA = (index / segments) * Math.PI * 2;
-      const angleB = ((index + 1) / segments) * Math.PI * 2;
-      this.triangle(
-        center,
-        add(center, mul(fromAngle(angleA), radius)),
-        add(center, mul(fromAngle(angleB), radius)),
-        color,
-      );
+      b.x = center.x + unit[index * 2 + 2] * radius;
+      b.y = center.y + unit[index * 2 + 3] * radius;
+      this.triangle(center, a, b, color);
+      const next = a;
+      a = b;
+      b = next;
     }
   }
 
@@ -171,21 +178,29 @@ class GeometryBatch {
     phase: number,
     segments = 10,
   ): void {
-    const pointAt = (angle: number): Vec2 => {
+    const unit = unitCircle(segments);
+    // Each rim point is shared by two triangles: work it out once.
+    const pointAt = (index: number, point: Vec2): void => {
+      const angle = (index / segments) * Math.PI * 2;
       const wobble =
         1 +
         Math.sin(angle * 3 + phase) * 0.08 +
         Math.cos(angle * 2 - phase * 0.7) * 0.045;
-      return add(
-        add(center, mul(forward, Math.cos(angle) * forwardRadius * wobble)),
-        mul(normal, Math.sin(angle) * sideRadius * wobble),
-      );
+      const along = unit[index * 2] * forwardRadius * wobble;
+      const across = unit[index * 2 + 1] * sideRadius * wobble;
+      point.x = center.x + forward.x * along + normal.x * across;
+      point.y = center.y + forward.y * along + normal.y * across;
     };
 
+    let a = this.rimA;
+    let b = this.rimB;
+    pointAt(0, a);
     for (let index = 0; index < segments; index += 1) {
-      const angleA = (index / segments) * Math.PI * 2;
-      const angleB = ((index + 1) / segments) * Math.PI * 2;
-      this.triangle(center, pointAt(angleA), pointAt(angleB), color);
+      pointAt(index + 1, b);
+      this.triangle(center, a, b, color);
+      const next = a;
+      a = b;
+      b = next;
     }
   }
 
@@ -262,7 +277,11 @@ export class FishRenderer {
       canvas,
       antialias: false,
       alpha: false,
-      powerPreference: "high-performance",
+      // Every pass draws without depth testing, so the canvas needs no depth buffer.
+      depth: false,
+      // A 480×270 pond is light work: on laptops with two GPUs, stay on the
+      // integrated one instead of waking the discrete GPU for it.
+      powerPreference: "low-power",
     });
     this.renderer.setPixelRatio(1);
     this.renderer.setSize(CANVAS_WIDTH, CANVAS_HEIGHT, false);
@@ -551,6 +570,8 @@ export class FishRenderer {
   }
 
   private buildRenderSpine(fish: Koi): void {
+    // Fallback direction for a degenerate tangent (normalize() copies it).
+    const heading = fromAngle(fish.heading);
     fish.renderSpine[0] = { ...fish.spine[0] };
     for (let node = 1; node < SPINE_NODES; node += 1) {
       const t = node / (SPINE_NODES - 1);
@@ -558,7 +579,7 @@ export class FishRenderer {
       const next = Math.min(SPINE_NODES - 1, node + 1);
       const tangent = normalize(
         sub(fish.spine[previous], fish.spine[next]),
-        fromAngle(fish.heading),
+        heading,
       );
       const normal = perpendicular(tangent);
       fish.renderSpine[node] = add(fish.spine[node], mul(normal, swimWave(fish, t)));
@@ -686,6 +707,8 @@ export class FishRenderer {
 
   private drawKoi(fish: Koi, appearance: FishAppearance): void {
     this.currentVisualDepth = this.visualDepth(fish.depth);
+    // Fallback direction for a degenerate tangent (normalize() copies it).
+    const heading = fromAngle(fish.heading);
     const left: Vec2[] = [];
     const right: Vec2[] = [];
 
@@ -694,7 +717,7 @@ export class FishRenderer {
       const next = Math.min(SPINE_NODES - 1, node + 1);
       const tangent = normalize(
         sub(fish.renderSpine[previous], fish.renderSpine[next]),
-        fromAngle(fish.heading),
+        heading,
       );
       const normal = perpendicular(tangent);
       const halfWidth = this.widthAt(fish, node);
@@ -707,7 +730,7 @@ export class FishRenderer {
     const pectoralBack = 6;
     const pectoralTangent = normalize(
       sub(fish.renderSpine[pectoralCenter - 1], fish.renderSpine[pectoralCenter + 1]),
-      fromAngle(fish.heading),
+      heading,
     );
     const pectoralNormal = perpendicular(pectoralTangent);
     const gulpProgress =
@@ -747,7 +770,7 @@ export class FishRenderer {
     const pelvicBack = 9;
     const pelvicTangent = normalize(
       sub(fish.renderSpine[pelvicCenter - 1], fish.renderSpine[pelvicCenter + 1]),
-      fromAngle(fish.heading),
+      heading,
     );
     const pelvicNormal = perpendicular(pelvicTangent);
     const pelvicReach = fish.bodyWidth * (0.28 + 0.05 * finPulse);
@@ -783,7 +806,7 @@ export class FishRenderer {
 
     const headForward = normalize(
       sub(fish.renderSpine[0], fish.renderSpine[1]),
-      fromAngle(fish.heading),
+      heading,
     );
     const headNormal = perpendicular(headForward);
     const noseCenter = add(fish.renderSpine[0], mul(headForward, fish.bodyWidth * 0.43));
@@ -801,7 +824,7 @@ export class FishRenderer {
     const tailNode = SPINE_NODES - 1;
     const tailForward = normalize(
       sub(fish.renderSpine[tailNode - 1], fish.renderSpine[tailNode]),
-      fromAngle(fish.heading),
+      heading,
     );
     const tailNormal = perpendicular(tailForward);
     const tailBackward = mul(tailForward, -1);
@@ -843,7 +866,7 @@ export class FishRenderer {
       const next = Math.min(SPINE_NODES - 1, node + 2);
       const forward = normalize(
         sub(fish.renderSpine[previous], fish.renderSpine[next]),
-        fromAngle(fish.heading),
+        heading,
       );
       const normal = perpendicular(forward);
       const localWidth =

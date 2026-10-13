@@ -541,22 +541,41 @@ export function App() {
     resizeObserver.observe(display);
 
     let animationFrame = 0;
+    let wakeTimer = 0;
+    let wakeAt = 0;
     let accumulator = 0;
     let simulationTime = 0;
     let previousTime = performance.now();
     let paused = false;
     let renderedFrames = 0;
     const frameLimiter = createFrameLimiter();
-    const animate = (now: number): void => {
-      if (paused) {
-        animationFrame = 0;
-        return;
+    const requestFrame = (): void => {
+      frameLimiter.noteWakeLateness(performance.now() - wakeAt);
+      wakeTimer = 0;
+      animationFrame = requestAnimationFrame(animate);
+    };
+    // With a frame-rate cap, sleep on a timer through the display refreshes
+    // that would be skipped anyway, then ask for the tick that renders. Each
+    // rAF tick wakes the renderer, compositor and GPU process, so on a 144 Hz
+    // display this cuts the wake-ups at 30 fps from ~144 to ~30-60 a second.
+    const scheduleNext = (): void => {
+      const now = performance.now();
+      const sleep = frameLimiter.sleepTime(now, frameRateOption(frameRateCapRef.current).fps);
+      if (sleep > 0) {
+        wakeAt = now + sleep;
+        wakeTimer = window.setTimeout(requestFrame, sleep);
+      } else {
+        animationFrame = requestAnimationFrame(animate);
       }
+    };
+    const animate = (now: number): void => {
+      animationFrame = 0;
+      if (paused) return;
       const cap = frameRateOption(frameRateCapRef.current);
       if (!frameLimiter.shouldRender(now, cap.fps)) {
         // previousTime only advances on rendered frames, so the accumulator
         // below still receives the full real elapsed time.
-        animationFrame = requestAnimationFrame(animate);
+        scheduleNext();
         return;
       }
       accumulator += Math.min((now - previousTime) / 1000, 0.1);
@@ -569,7 +588,7 @@ export function App() {
 
       renderer.draw(school, simulationTime, runtime.showDebug);
       renderedFrames += 1;
-      animationFrame = requestAnimationFrame(animate);
+      scheduleNext();
     };
 
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -609,7 +628,7 @@ export function App() {
     const disconnectHost = onHostMessage((message) => {
       if (message.type !== "paused" || message.value === paused) return;
       paused = message.value;
-      if (!paused && animationFrame === 0) {
+      if (!paused && animationFrame === 0 && wakeTimer === 0) {
         previousTime = performance.now();
         animationFrame = requestAnimationFrame(animate);
       }
@@ -631,6 +650,7 @@ export function App() {
       window.clearInterval(statsTimer);
       disconnectHost();
       cancelAnimationFrame(animationFrame);
+      window.clearTimeout(wakeTimer);
       disconnectEffects();
       resizeObserver.disconnect();
       window.removeEventListener("keydown", handleKeyDown);

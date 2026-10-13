@@ -39,6 +39,8 @@ internal static class WebHost
         core.Settings.AreDefaultContextMenusEnabled = !wallpaper;
         core.Settings.AreBrowserAcceleratorKeysEnabled = !wallpaper;
         core.Settings.IsBuiltInErrorPageEnabled = !wallpaper;
+        // The pond is the app's own files: no SmartScreen lookup for them.
+        core.Settings.IsReputationCheckingRequired = false;
 
         // Links (GitHub, the upstream project) open in the user's browser.
         core.NewWindowRequested += (_, e) =>

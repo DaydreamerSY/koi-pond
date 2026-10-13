@@ -97,6 +97,9 @@ export class ButterflyPass {
     opacity: BUTTERFLIES.shadow.opacity,
     transparent: true,
     side: THREE.DoubleSide,
+    // One flat color, so a single pass looks the same as three's
+    // two-pass (back, then front) redraw of two-sided transparents.
+    forceSinglePass: true,
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
