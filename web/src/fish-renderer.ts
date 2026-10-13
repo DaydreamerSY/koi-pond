@@ -17,7 +17,7 @@ import {
   type FishAppearance,
 } from "./fish-appearance";
 import { FrogRenderer } from "./frog-renderer";
-import { Koi, SwimState } from "./koi";
+import { Koi, SwimState, swimWave } from "./koi";
 import { LotusLeavesPass } from "./lotus-leaves";
 import {
   add,
@@ -561,14 +561,7 @@ export class FishRenderer {
         fromAngle(fish.heading),
       );
       const normal = perpendicular(tangent);
-      const waveEnvelope = Math.pow(t, 1.72);
-      const wave =
-        Math.sin(fish.swimPhase - t * 6.1) *
-        fish.bodyWidth *
-        1.15 *
-        waveEnvelope *
-        (0.08 + fish.tailEffort * 0.92);
-      fish.renderSpine[node] = add(fish.spine[node], mul(normal, wave));
+      fish.renderSpine[node] = add(fish.spine[node], mul(normal, swimWave(fish, t)));
     }
   }
 
@@ -725,7 +718,7 @@ export class FishRenderer {
       + gulpPaddle;
     const finPulse =
       0.82 +
-      paddleActivity * 0.25 * Math.sin(fish.swimPhase * 0.64 + fish.phaseOffset);
+      paddleActivity * 0.25 * Math.sin(fish.finPhase);
     const pectoralReach =
       fish.bodyWidth * (0.55 + paddleActivity * 0.25) * finPulse;
     const leftPectoral = add(

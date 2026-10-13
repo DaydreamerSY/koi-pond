@@ -17,7 +17,6 @@ import {
   clamp,
   fromAngle,
   length,
-  lerp,
   mul,
   normalize,
   perpendicular,
@@ -28,12 +27,6 @@ import {
   XorShift32,
 } from "./math";
 import { RippleSystem } from "./ripple-system";
-
-/** A koi turning slowly swings around this node, about a third of the way back. */
-const TURN_PIVOT_NODE = Math.round((SPINE_NODES - 1) * 0.3);
-// Scratch space for School.evenOutBend (segment directions and lengths).
-const SPINE_ANGLES = new Array<number>(SPINE_NODES).fill(0);
-const SPINE_LENGTHS = new Array<number>(SPINE_NODES).fill(0);
 
 export class School {
   public readonly fish: Koi[] = Array.from({ length: MAX_FISH }, () => new Koi());
@@ -163,9 +156,9 @@ export class School {
   public scatter(): void {
     for (let index = 0; index < this.count; index += 1) {
       const fish = this.fish[index];
-      fish.heading += this.random.range(-1.35, 1.35);
+      // Startled koi dart off and swerve; they don't snap round on the spot.
       fish.speed = fish.maximumSpeed;
-      fish.angularVelocity += this.random.range(-2, 2);
+      fish.angularVelocity += this.random.range(-3, 3);
       this.enterState(fish, SwimState.Burst);
     }
     this.targetActive = false;
@@ -335,6 +328,12 @@ export class School {
   private updateNaturalState(fish: Koi, dt: number): void {
     fish.stateAge += dt;
     if (fish.stateAge < fish.stateDuration) return;
+    // A pivot keeps swimming round until it faces its new way (or gives up).
+    if (
+      fish.state === SwimState.Pivot &&
+      fish.stateAge < 6 &&
+      Math.abs(wrapAngle(fish.pivotHeading - fish.heading)) > 0.25
+    ) return;
 
     const roll = this.behaviorUnit(fish);
     switch (fish.state) {
@@ -466,27 +465,17 @@ export class School {
       case SwimState.Coast:
         return intention * 0.28;
       case SwimState.Hover:
-        return 0;
+        // Holding still is never quite still.
+        return fish.cruiseSpeed * FISH.swimming.hoverDrift;
       case SwimState.Burst:
         return fish.maximumSpeed * 1.08;
       case SwimState.Pivot:
-        return fish.cruiseSpeed * 0.16;
+        // Turning takes way: a pivot is a tight turn swum forward.
+        return fish.cruiseSpeed * 0.85;
     }
   }
 
   private integrate(fish: Koi, desired: Vec2, desiredSpeed: number, dt: number): void {
-    const desiredHeading = Math.atan2(desired.y, desired.x);
-    const headingError = wrapAngle(desiredHeading - fish.heading);
-    const pivoting = fish.state === SwimState.Pivot;
-    const turnMultiplier = pivoting ? 2.65 : 1;
-    const angularDamping = pivoting ? 2.15 : 3.8;
-    const angularAcceleration =
-      headingError * fish.turnStrength * turnMultiplier - fish.angularVelocity * angularDamping;
-    fish.angularVelocity += angularAcceleration * dt;
-    const maximumTurnRate = pivoting ? 4.35 : 2.25;
-    fish.angularVelocity = clamp(fish.angularVelocity, -maximumTurnRate, maximumTurnRate);
-    this.turn(fish, dt);
-
     let speedResponse = 1.65;
     let desiredTailEffort = 0.62;
     switch (fish.state) {
@@ -497,133 +486,74 @@ export class School {
         desiredTailEffort = 0.16;
         break;
       case SwimState.Hover:
-        speedResponse = 3.6;
-        desiredTailEffort = 0.05;
+        // Ease to a near stop rather than braking; the fins keep sculling.
+        speedResponse = 1.3;
+        desiredTailEffort = FISH.swimming.hoverTailEffort;
         break;
       case SwimState.Burst:
         speedResponse = 6.4;
         desiredTailEffort = 1.22;
         break;
       case SwimState.Pivot:
-        speedResponse = 4.2;
-        desiredTailEffort = 1;
+        speedResponse = 3.2;
+        desiredTailEffort = 0.9;
         break;
     }
-
     fish.speed += (desiredSpeed - fish.speed) * (1 - Math.exp(-speedResponse * dt));
     fish.tailEffort += (desiredTailEffort - fish.tailEffort) * (1 - Math.exp(-4.5 * dt));
-    fish.velocity = mul(fromAngle(fish.heading), fish.speed);
+
+    const desiredHeading = Math.atan2(desired.y, desired.x);
+    const headingError = wrapAngle(desiredHeading - fish.heading);
+    const pivoting = fish.state === SwimState.Pivot;
+    const turnMultiplier = pivoting ? 2.65 : 1;
+    const angularDamping = pivoting ? 2.15 : 3.8;
+    const turning = FISH.turning;
+    // Turns ease in and out rather than snapping.
+    const angularAcceleration = clamp(
+      headingError * fish.turnStrength * turnMultiplier - fish.angularVelocity * angularDamping,
+      -turning.turnEase,
+      turning.turnEase,
+    );
+    fish.angularVelocity += angularAcceleration * dt;
+    // A koi never spins on the spot: it turns by swimming forward along a
+    // curve no tighter than its body can bend, so the slower it swims the
+    // slower it turns, and a longer koi turns wider. Only a koi racing to
+    // food turns as tightly as it can.
+    const chasing = this.targetActive && fish.respondedToCall;
+    const tightness = chasing || fish.state === SwimState.Burst
+      ? 1
+      : pivoting ? turning.pivotTightness : turning.cruiseTightness;
+    const steerage = Math.max(fish.speed, turning.idleTurnSpeed);
+    const minimumRadius = fish.bodyLength / this.maximumBend(fish);
+    const turnLimit = Math.min(pivoting ? 4.35 : 2.25, (steerage / minimumRadius) * tightness);
+    fish.angularVelocity = clamp(fish.angularVelocity, -turnLimit, turnLimit);
+    fish.heading = wrapAngle(fish.heading + fish.angularVelocity * dt);
+
+    // Thrust comes in pulses, one per stroke of the tail.
+    const stroke = 1 + FISH.swimming.strokeSurge * Math.min(fish.tailEffort, 1) * Math.sin(2 * fish.swimPhase);
+    fish.velocity = mul(fromAngle(fish.heading), fish.speed * stroke);
     fish.position = add(fish.position, mul(fish.velocity, dt));
 
-    const beatRate = 0.45 + (fish.speed / fish.maximumSpeed) * 4.6 + fish.tailEffort * 0.9;
-    fish.swimPhase += beatRate * dt;
+    const speedShare = clamp(fish.speed / fish.maximumSpeed, 0, 1.5);
+    fish.swimPhase += (1.2 + speedShare * 6 + fish.tailEffort * 1.2) * dt;
+    fish.finPhase += (3 + (1 - Math.min(speedShare, 1)) * 3) * dt;
 
-    fish.spine[0] = { ...fish.position };
+    // The body bends along the curve the head is swimming: an even arc whose
+    // curvature is turn rate over speed, settling like a body would.
+    const curvatureLimit = this.maximumBend(fish) / fish.bodyLength;
+    const targetCurvature = clamp(fish.angularVelocity / steerage, -curvatureLimit, curvatureLimit);
+    fish.curvature += (targetCurvature - fish.curvature) * (1 - Math.exp(-dt / FISH.turning.bodyResponse));
+    this.layBody(fish);
+  }
+
+  /** Lays the spine back from the head along an arc of the body's curvature. */
+  private layBody(fish: Koi): void {
     const spacing = fish.bodyLength / (SPINE_NODES - 1);
-    // Each joint bends at most its share of the body's limit, so a turn curls
-    // the whole body into an even C instead of kinking behind the head.
-    const jointLimit = (this.maximumBend(fish) / (SPINE_NODES - 1)) * FISH.turning.jointFlex;
-    let forwardAngle = fish.heading;
+    fish.spine[0] = { ...fish.position };
     for (let node = 1; node < SPINE_NODES; node += 1) {
-      const fallback = mul(fromAngle(fish.heading), -1);
-      const direction = normalize(sub(fish.spine[node], fish.spine[node - 1]), fallback);
-      const constrained = add(fish.spine[node - 1], mul(direction, spacing));
-      const tailAmount = node / (SPINE_NODES - 1);
-      const stiffness = 0.94 - tailAmount * 0.17;
-      fish.spine[node] = lerp(fish.spine[node], constrained, stiffness);
-
-      const segment = sub(fish.spine[node - 1], fish.spine[node]);
-      const segmentLength = length(segment);
-      let angle = segmentLength > 0.0001 ? Math.atan2(segment.y, segment.x) : forwardAngle;
-      const joint = wrapAngle(angle - forwardAngle);
-      if (Math.abs(joint) > jointLimit) {
-        angle = forwardAngle + Math.sign(joint) * jointLimit;
-        fish.spine[node] = sub(
-          fish.spine[node - 1],
-          mul(fromAngle(angle), segmentLength > spacing * 0.5 ? segmentLength : spacing),
-        );
-      }
-      forwardAngle = angle;
+      const angle = fish.heading - fish.curvature * spacing * (node - 0.5);
+      fish.spine[node] = sub(fish.spine[node - 1], mul(fromAngle(angle), spacing));
     }
-    this.evenOutBend(fish);
-  }
-
-  /**
-   * Spreads the body's curve evenly from head to tail, so a turn reads as a
-   * smooth C rather than a hook just behind the head (or a wiggle), and opens
-   * the C back up to the fish's limit if following the head's path curled the
-   * tail any further. The head stays put; the rest of the body is re-laid.
-   */
-  private evenOutBend(fish: Koi): void {
-    const amount = FISH.turning.smoothing;
-    const angles = SPINE_ANGLES;
-    const lengths = SPINE_LENGTHS;
-    angles[0] = fish.heading;
-    for (let node = 1; node < SPINE_NODES; node += 1) {
-      const segment = sub(fish.spine[node - 1], fish.spine[node]);
-      lengths[node] = length(segment);
-      const raw = lengths[node] > 0.0001 ? Math.atan2(segment.y, segment.x) : angles[node - 1];
-      angles[node] = angles[node - 1] + wrapAngle(raw - angles[node - 1]);
-    }
-    for (let pass = 0; amount > 0 && pass < 3; pass += 1) {
-      for (let node = 1; node < SPINE_NODES - 1; node += 1) {
-        angles[node] += amount * ((angles[node - 1] + angles[node + 1]) * 0.5 - angles[node]);
-      }
-    }
-    const bend = angles[SPINE_NODES - 1] - angles[0];
-    const limit = this.maximumBend(fish);
-    if (Math.abs(bend) > limit) {
-      const scale = limit / Math.abs(bend);
-      for (let node = 1; node < SPINE_NODES; node += 1) {
-        angles[node] = angles[0] + (angles[node] - angles[0]) * scale;
-      }
-    }
-    for (let node = 1; node < SPINE_NODES; node += 1) {
-      fish.spine[node] = sub(fish.spine[node - 1], mul(fromAngle(angles[node]), lengths[node]));
-    }
-  }
-
-  /**
-   * Turns the head without letting the body fold back on itself. A slow koi
-   * swings its whole body around its middle (as its pectoral fins would); the
-   * rest of the turn curls the body into a C, up to its bend limit. At that
-   * limit a moving koi has to swim the curve out, so its tightest turn widens
-   * with its length.
-   */
-  private turn(fish: Koi, dt: number): void {
-    const turn = fish.angularVelocity * dt;
-    if (turn === 0) return;
-    const slowness = clamp(1 - fish.speed / Math.max(fish.cruiseSpeed, 0.001), 0, 1);
-    const rigid = turn * slowness * FISH.turning.inPlaceRotation;
-    let bendTurn = turn - rigid;
-    const bend = this.bodyBend(fish);
-    if (bend === 0 || Math.sign(bendTurn) === Math.sign(bend)) {
-      const room = Math.max(0, this.maximumBend(fish) - Math.abs(bend));
-      if (Math.abs(bendTurn) > room) bendTurn = Math.sign(bendTurn) * room;
-    }
-    const applied = rigid + bendTurn;
-    // The body couldn't take the whole turn: don't let more of it build up.
-    if (Math.abs(applied) < Math.abs(turn)) fish.angularVelocity = applied / dt;
-    fish.heading = wrapAngle(fish.heading + applied);
-
-    if (rigid === 0) return;
-    const pivot = { ...fish.spine[TURN_PIVOT_NODE] };
-    const cosine = Math.cos(rigid);
-    const sine = Math.sin(rigid);
-    const swing = (point: Vec2): Vec2 => {
-      const dx = point.x - pivot.x;
-      const dy = point.y - pivot.y;
-      return { x: pivot.x + dx * cosine - dy * sine, y: pivot.y + dx * sine + dy * cosine };
-    };
-    fish.position = swing(fish.position);
-    for (let node = 0; node < SPINE_NODES; node += 1) fish.spine[node] = swing(fish.spine[node]);
-  }
-
-  /** The head's heading relative to the tail's direction: how curled the body is. */
-  private bodyBend(fish: Koi): number {
-    const tail = sub(fish.spine[SPINE_NODES - 2], fish.spine[SPINE_NODES - 1]);
-    if (tail.x === 0 && tail.y === 0) return 0;
-    return wrapAngle(fish.heading - Math.atan2(tail.y, tail.x));
   }
 
   /** The tightest C this koi can curl into, head to tail (radians). */

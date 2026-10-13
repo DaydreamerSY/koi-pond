@@ -183,11 +183,11 @@ describe("lotus leaves", () => {
       const a = disturbed.lotus.leaves[12];
       const b = calm.lotus.leaves[12];
       farthest = Math.max(farthest, length(sub(a, b)));
-      highest = Math.max(highest, a.lift - b.lift);
+      highest = Math.max(highest, a.bob - b.bob);
       twisted = Math.max(twisted, Math.abs(a.rotation - b.rotation));
     });
     expect(farthest).toBeGreaterThan(1);
-    expect(highest).toBeGreaterThan(0.01);
+    expect(highest).toBeGreaterThan(0.3);
     expect(twisted).toBeGreaterThan(0.01);
     // Pushed away from where the ring came from.
     expect(disturbed.lotus.leaves[12].x).toBeGreaterThan(calm.lotus.leaves[12].x);
@@ -197,20 +197,41 @@ describe("lotus leaves", () => {
       calm.step(dt, now);
     }, time);
     expect(length(sub(disturbed.lotus.leaves[12], calm.lotus.leaves[12]))).toBeLessThan(0.1);
-    expect(Math.abs(disturbed.lotus.leaves[12].lift - calm.lotus.leaves[12].lift)).toBeLessThan(0.002);
+    expect(Math.abs(disturbed.lotus.leaves[12].bob - calm.lotus.leaves[12].bob)).toBeLessThan(0.05);
     expect(time).toBeGreaterThan(0);
   });
 
-  it("dip when a frog lands on them", () => {
+  it("dip when a frog lands on them, by only a percent or so", () => {
     const disturbed = pond();
     const calm = pond();
     disturbed.lotus.bump(3);
     let deepest = 0;
-    run(0.5, (dt, now) => {
+    let smallestScale = Infinity;
+    run(3, (dt, now) => {
       disturbed.step(dt, now);
       calm.step(dt, now);
-      deepest = Math.min(deepest, disturbed.lotus.leaves[3].lift - calm.lotus.leaves[3].lift);
+      deepest = Math.min(deepest, disturbed.lotus.leaves[3].bob - calm.lotus.leaves[3].bob);
+      smallestScale = Math.min(smallestScale, 1 + disturbed.lotus.leaves[3].lift);
     });
-    expect(deepest).toBeLessThan(-0.02);
+    expect(deepest).toBeLessThan(-0.5);
+    expect(smallestScale).toBeGreaterThan(1 - 0.015 - 1e-9);
+  });
+
+  it("scale by 0.5–1.5% at most, bigger leaves less (in inverse proportion to size)", () => {
+    const { lotus, ripples, step } = pond();
+    // A big disturbance: rain of touches everywhere.
+    const widest = new Map<number, number>();
+    run(20, (dt, now) => {
+      if (Math.round(now * 60) % 20 === 0) ripples.trigger("touch", { x: (now * 97) % 480, y: (now * 53) % 270 });
+      step(dt, now);
+      for (const [index, leaf] of lotus.leaves.entries()) {
+        widest.set(index, Math.max(widest.get(index) ?? 0, Math.abs(leaf.lift)));
+      }
+    });
+    const leaves = lotus.leaves.map((leaf, index) => ({ radius: leaf.radius, widest: widest.get(index) ?? 0 }));
+    for (const leaf of leaves) expect(leaf.widest).toBeLessThanOrEqual(0.015 + 1e-9);
+    const small = leaves.reduce((a, b) => (a.radius < b.radius ? a : b));
+    const big = leaves.reduce((a, b) => (a.radius > b.radius ? a : b));
+    expect(big.widest).toBeLessThan(small.widest);
   });
 });

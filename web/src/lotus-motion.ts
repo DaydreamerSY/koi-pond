@@ -11,8 +11,17 @@ import type { RippleSystem } from "./ripple-system";
 export interface LeafPose extends LeafCircle {
   /** Sway plus twist, in radians. */
   rotation: number;
-  /** How high the leaf rides, as a share of its size: it scales the leaf and throws its shadow farther. */
+  /** Where the leaf is in its bob, about −1 (pressed under) to 1 (riding high). */
+  bob: number;
+  /** How much the bob scales the leaf right now: a small share of its size (see Lotus › Float). */
   lift: number;
+}
+
+/** Bigger leaves bob less: the scale range shrinks in inverse proportion to size. */
+function bobRange(radius: number, smallestRadius: number): number {
+  const { bobSmallest, bobLargest } = LOTUS.float;
+  const range = bobSmallest * (smallestRadius / Math.max(radius, 0.001));
+  return Math.max(Math.min(bobSmallest, bobLargest), Math.min(bobSmallest, range));
 }
 
 interface LeafDynamics {
@@ -41,10 +50,11 @@ export class LotusMotion {
     this.dynamics.length = 0;
   }
 
-  /** A frog landing on (or leaping off) a leaf pushes it under a little; it bobs back up. */
+  /** A frog landing on a leaf presses it under a little; it bobs back up. */
   public bump(index: number, amount = LOTUS.float.frogBump): void {
     const motion = this.dynamics[index];
-    if (motion) motion.liftVelocity -= amount;
+    // A kick of this speed dips the spring about `amount` deep.
+    if (motion) motion.liftVelocity -= amount * Math.sqrt(LOTUS.float.spring * 6) * 1.25;
   }
 
   /** Where a flower sits on its leaf right now, or null while that leaf is hidden. */
@@ -64,6 +74,10 @@ export class LotusMotion {
   public update(dt: number, time: number, ripples?: RippleSystem): void {
     const float = LOTUS.float;
     const count = Math.min(LOTUS.visibleLeafCount, LOTUS_LEAVES.length);
+    let smallestRadius = Infinity;
+    for (let index = 0; index < count; index += 1) {
+      smallestRadius = Math.min(smallestRadius, LOTUS_LEAVES[index].radius * LOTUS.radiusScale);
+    }
     // Leaves bob up and down faster than they drift sideways.
     const liftStiffness = float.spring * 6;
     const liftDamping = float.damping * 2;
@@ -126,7 +140,7 @@ export class LotusMotion {
           motion.velocityY *= scale;
         }
         motion.liftVelocity += (lift * float.rippleLift - motion.lift * liftStiffness - motion.liftVelocity * liftDamping) * dt;
-        motion.lift += motion.liftVelocity * dt;
+        motion.lift = Math.max(-1.3, Math.min(1.3, motion.lift + motion.liftVelocity * dt));
         motion.twistVelocity += (twist * float.rippleTwist - motion.twist * float.spring - motion.twistVelocity * float.damping) * dt;
         motion.twist += motion.twistVelocity * dt;
       }
@@ -134,12 +148,15 @@ export class LotusMotion {
       const swell =
         (Math.sin(time * float.swellSpeed + leaf.phase * 2.7) * 0.7
           + Math.sin(time * float.swellSpeed * 1.73 + leaf.phase) * 0.3) * float.swell;
-      const lift = swell + motion.lift;
-      const pose = this.leaves[index] ?? (this.leaves[index] = { x: 0, y: 0, radius: 0, rotation: 0, lift: 0 });
+      // Saturates softly, so even a big disturbance stays within the leaf's bob range.
+      const bob = Math.tanh(swell + motion.lift);
+      const lift = bob * bobRange(radius, smallestRadius);
+      const pose = this.leaves[index] ?? (this.leaves[index] = { x: 0, y: 0, radius: 0, rotation: 0, bob: 0, lift: 0 });
       pose.x = restX + motion.offsetX;
       pose.y = restY + motion.offsetY;
       pose.radius = radius * (1 + lift);
       pose.rotation = Math.sin(time * 0.085 + leaf.phase) * LOTUS.rotationAmount + motion.twist;
+      pose.bob = bob;
       pose.lift = lift;
     }
     this.leaves.length = count;

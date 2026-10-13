@@ -23,6 +23,10 @@ export class Koi {
   public bodyLength = 24;
   public bodyWidth = 4;
   public swimPhase = 0;
+  /** Pectoral fins scull on their own rhythm, hardest when the koi is slow. */
+  public finPhase = 0;
+  /** How the body curves along the path it is swimming (1/px, + is a left turn). */
+  public curvature = 0;
   public phaseOffset = 0;
   public wanderSeed = 0;
   public stateAge = 0;
@@ -61,6 +65,8 @@ export class Koi {
     this.bodyWidth = this.bodyLength * random.range(widthRange[0], widthRange[1]);
     this.phaseOffset = random.range(0, TAU);
     this.swimPhase = this.phaseOffset;
+    this.finPhase = this.phaseOffset * 1.7;
+    this.curvature = 0;
     this.wanderSeed = random.range(0, 100);
     this.reactivity = random.range(0.35, 1);
     this.callDelay = 0;
@@ -107,4 +113,16 @@ export class Koi {
       this.renderSpine[node] = { ...this.spine[node] };
     }
   }
+}
+
+/**
+ * Side-to-side offset of the body at `t` (0 head … 1 tail) in the swim wave.
+ * Koi swim like fish, not eels: the front of the body barely moves, the sway
+ * grows toward the tail, and less than a whole wave fits along the body.
+ */
+export function swimWave(fish: Koi, t: number): number {
+  const swimming = FISH.swimming;
+  const envelope = Math.pow(t, swimming.envelopePower);
+  const effort = 0.1 + Math.min(fish.tailEffort, 1.3) * 0.9;
+  return Math.sin(fish.swimPhase - t * swimming.waveNumber) * fish.bodyWidth * swimming.tailAmplitude * envelope * effort;
 }

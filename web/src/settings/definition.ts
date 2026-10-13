@@ -145,30 +145,60 @@ const koi = group(
         waveSpeed: num({ default: 2.4, min: -10, max: 10, step: 0.05 }),
       }),
     }),
-    // A koi turns by curling into a C. The body never folds back on itself:
-    // the head can only bend so far from the tail, and a longer koi is stiffer,
-    // so its tightest turn is wider.
+    // A koi never spins on the spot: it turns by swimming forward along a
+    // curve, and its body bends along that curve into at most a C. A longer
+    // koi is stiffer, so its tightest turn is wider.
     turning: group({
       maxBodyBend: num({
-        default: 2.1, min: 0.3, max: 2.9, step: 0.01, unit: "rad",
-        description: "How far a koi of the reference length can curl into a C, head to tail (2.1 rad ≈ 120°).",
+        default: 2.5, min: 0.3, max: 2.9, step: 0.01, unit: "rad",
+        description: "How far a koi of the reference length can curl into a C, head to tail (2.5 rad ≈ 143°).",
       }),
       referenceLength: num({ default: 30, min: 5, max: 80, step: 0.5, unit: "px" }),
       lengthStiffness: num({
         default: 0.4, min: 0, max: 2, step: 0.05,
         description: "Longer koi bend less: the C limit scales by (reference length ÷ body length) to this power.",
       }),
-      jointFlex: num({
-        default: 1.25, min: 1, max: 4, step: 0.05,
-        description: "How much of the bend may gather in one part of the body (1 = an even arc).",
+      idleTurnSpeed: num({
+        default: 2.5, min: 0, max: 20, step: 0.1, unit: "px/s",
+        description: "How fast a nearly still koi can still turn, as if it were swimming this fast.",
       }),
-      smoothing: num({
-        default: 0.5, min: 0, max: 1, step: 0.01,
-        description: "How strongly the curve evens out along the body each step (a smooth C instead of a hook).",
+      bodyResponse: num({
+        default: 0.3, min: 0.01, max: 2, step: 0.01, unit: "s",
+        description: "How quickly the body's curve follows a change of turn.",
       }),
-      inPlaceRotation: num({
-        default: 0.6, min: 0, max: 1, step: 0.01,
-        description: "When swimming slowly, how much of a turn swings the whole body around its middle instead of bending it.",
+      turnEase: num({
+        default: 6, min: 0.5, max: 60, step: 0.5, unit: "rad/s²",
+        description: "How quickly a koi can start or stop turning.",
+      }),
+      cruiseTightness: num({
+        default: 0.7, min: 0.1, max: 1, step: 0.01,
+        description: "Share of its tightest turn a koi uses while cruising.",
+      }),
+      pivotTightness: num({
+        default: 0.9, min: 0.1, max: 1, step: 0.01,
+        description: "Share of its tightest turn a koi uses to turn around. A koi racing to food uses all of it.",
+      }),
+    }),
+    // Koi swim like fish, not eels: the front of the body stays nearly still
+    // and the wave grows toward the tail.
+    swimming: group({
+      waveNumber: num({
+        default: 3.6, min: 0, max: 12, step: 0.05,
+        description: "How much of a wave fits along the body (6.3 = a whole wave, eel-like; lower = stiffer, more fish-like).",
+      }),
+      envelopePower: num({
+        default: 2.4, min: 0.5, max: 6, step: 0.05,
+        description: "How much the sway is kept to the tail end (higher = stiller front of the body).",
+      }),
+      tailAmplitude: num({ default: 0.75, min: 0, max: 3, step: 0.01, description: "Tail sway, as a share of the body width." }),
+      strokeSurge: num({
+        default: 0.12, min: 0, max: 1, step: 0.01,
+        description: "How much each stroke of the tail pushes the koi forward in a pulse.",
+      }),
+      hoverTailEffort: num({ default: 0.22, min: 0, max: 1, step: 0.01, description: "Gentle tail motion while holding still." }),
+      hoverDrift: num({
+        default: 0.08, min: 0, max: 0.5, step: 0.01,
+        description: "A holding koi still drifts at this share of its cruise speed.",
       }),
     }),
     feeding: group({
@@ -537,22 +567,35 @@ const lotus = group(
           default: 1.6, min: 0, max: 10, step: 0.1, unit: "px",
           description: "Slow wandering on the current, on top of the drift above.",
         }),
+        // A leaf's bob scales it by at most bobSmallest (the smallest leaf) down
+        // to bobLargest (bigger leaves, in inverse proportion to their size).
+        bobSmallest: num({
+          default: 0.015, min: 0, max: 0.1, step: 0.001,
+          description: "How much the smallest leaf grows or shrinks at the top or bottom of a bob (0.015 = 1.5%).",
+        }),
+        bobLargest: num({
+          default: 0.005, min: 0, max: 0.1, step: 0.001,
+          description: "The least a leaf grows or shrinks; bigger leaves bob less, in inverse proportion to their size.",
+        }),
         swell: num({
-          default: 0.03, min: 0, max: 0.2, step: 0.001,
-          description: "How much each leaf rises and sinks on the gentle swell (a share of its size).",
+          default: 0.5, min: 0, max: 1, step: 0.01,
+          description: "How much of its bob a leaf uses riding the gentle swell.",
         }),
         swellSpeed: num({ default: 0.55, min: 0, max: 5, step: 0.01, unit: "rad/s" }),
         shadowLift: num({
-          default: 5, min: 0, max: 20, step: 0.1,
-          description: "How much farther the shadow falls while a leaf rides high.",
+          default: 0.12, min: 0, max: 1, step: 0.01,
+          description: "How much farther the shadow falls at the top of a bob (a share of its offset).",
         }),
         ripplePush: num({
           default: 34, min: 0, max: 200, step: 1, unit: "px/s²",
           description: "How hard a passing ripple ring pushes a leaf outward.",
         }),
-        rippleLift: num({ default: 1.6, min: 0, max: 10, step: 0.05, description: "How much a passing ripple lifts a leaf." }),
+        rippleLift: num({ default: 20, min: 0, max: 100, step: 0.5, description: "How much a passing ripple lifts a leaf." }),
         rippleTwist: num({ default: 0.9, min: 0, max: 10, step: 0.05, description: "How much a passing ripple twists a leaf." }),
-        frogBump: num({ default: 0.2, min: 0, max: 3, step: 0.01, description: "How far a leaf dips when a frog lands on or leaps off it." }),
+        frogBump: num({
+          default: 1, min: 0, max: 2, step: 0.05,
+          description: "How deep a leaf dips once a frog lands on it (1 = its whole bob).",
+        }),
         spring: num({
           default: 2.6, min: 0.1, max: 30, step: 0.1,
           description: "How firmly a nudged leaf drifts back (it bobs faster than it drifts).",

@@ -224,7 +224,7 @@ export class LotusLeavesPass {
 
       // Riding higher, a leaf looks a touch bigger and throws its shadow farther.
       const scale = 1 + pose.lift;
-      const shadowReach = 1 + pose.lift * LOTUS.float.shadowLift;
+      const shadowReach = 1 + pose.bob * LOTUS.float.shadowLift;
       mesh.group.position.set(pose.x, pose.y, 0);
       mesh.group.rotation.z = pose.rotation;
       mesh.group.scale.setScalar(scale);

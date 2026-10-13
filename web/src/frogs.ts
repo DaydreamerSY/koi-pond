@@ -102,10 +102,11 @@ export class Frogs {
   // ---- states ------------------------------------------------------------------
 
   private sit(frog: Frog, dt: number): void {
-    const leaf = this.leaves[frog.leaf];
-    if (leaf) frog.position = add(leaf, frog.seat);
+    const leaf = this.lotus.leaves[frog.leaf];
+    frog.lift = leaf?.lift ?? 0;
+    // The frog rides the leaf: it moves and scales with it.
+    if (leaf) frog.position = add(leaf, mul(frog.seat, 1 + frog.lift));
     frog.height = 0;
-    frog.lift = this.lotus.leaves[frog.leaf]?.lift ?? 0;
 
     // A croak: the throat sac puffs three times.
     if (frog.croakTime > 0) {
@@ -285,10 +286,9 @@ export class Frogs {
     this.begin(frog, "hop", FROGS.hopSeconds);
   }
 
-  /** Leaping off a leaf kicks it down a little. */
+  /** Leaving a leaf: the frog stops riding its bob. (Only landing dips a leaf.) */
   private pushOff(frog: Frog): void {
     frog.lift = 0;
-    if (frog.state === "sit" && frog.leaf >= 0) this.lotus.bump(frog.leaf);
   }
 
   /** The leaves as they float right now. */

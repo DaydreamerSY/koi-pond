@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SPINE_NODES } from "./config";
-import { SwimState } from "./koi";
+import { SwimState, swimWave } from "./koi";
 import { length, sub, wrapAngle } from "./math";
 import { School } from "./school";
 
@@ -12,20 +12,31 @@ function bodyBend(school: School, index: number): number {
   return Math.abs(wrapAngle(fish.heading - Math.atan2(tail.y, tail.x)));
 }
 
-describe("koi turning", () => {
-  it("curl into a C at most, and never fold the head back against the body", () => {
+function lone(): School {
+  const school = new School();
+  school.setCount(1);
+  let time = 0;
+  for (let step = 0; step < 60; step += 1) school.update(STEP, (time += STEP));
+  return school;
+}
+
+describe("koi swimming and turning", () => {
+  it("curl into a C at most, never fold the head back, and never snap round on the spot", () => {
     const school = new School();
     let time = 0;
     let worstExcess = 0;
     let closestHead = Infinity;
+    let worstSnap = 0;
     for (let step = 0; step < 60 * 90; step += 1) {
-      school.update(STEP, (time += STEP));
       // Calls and scatters force the sharpest turns.
       if (step % 600 === 0) school.callTo({ x: 60 + ((step * 7) % 360), y: 40 + ((step * 3) % 190) });
       if (step % 1500 === 750) school.scatter();
+      const headings = school.fish.slice(0, school.count).map((fish) => fish.heading);
+      school.update(STEP, (time += STEP));
       for (let index = 0; index < school.count; index += 1) {
         const fish = school.fish[index];
         worstExcess = Math.max(worstExcess, bodyBend(school, index) - school.maximumBend(fish));
+        worstSnap = Math.max(worstSnap, Math.abs(wrapAngle(fish.heading - headings[index])));
         for (let node = 5; node < SPINE_NODES; node += 1) {
           closestHead = Math.min(closestHead, length(sub(fish.spine[0], fish.spine[node])) / fish.bodyLength);
         }
@@ -33,6 +44,8 @@ describe("koi turning", () => {
     }
     expect(worstExcess).toBeLessThan(0.05);
     expect(closestHead).toBeGreaterThan(0.25);
+    // Never more than a few degrees of turn in one 60 Hz step.
+    expect(worstSnap).toBeLessThan(0.08);
   }, 30_000);
 
   it("lets a shorter koi curl tighter than a longer one", () => {
@@ -44,19 +57,59 @@ describe("koi turning", () => {
     expect(school.maximumBend(short)).toBeGreaterThan(school.maximumBend(long));
   });
 
-  it("turns a slow koi around the middle of its body, not around its nose", () => {
-    const school = new School();
-    school.setCount(1);
+  it("turns around by swimming a curve, never spinning on the spot", () => {
+    const school = lone();
     const fish = school.fish[0];
-    let time = 0;
-    for (let step = 0; step < 60; step += 1) school.update(STEP, (time += STEP));
-    const middleBefore = { ...fish.spine[4] };
-    const headBefore = { ...fish.spine[0] };
     fish.state = SwimState.Pivot;
     fish.stateAge = 0;
     fish.stateDuration = 0.6;
-    fish.pivotHeading = wrapAngle(fish.heading + 2);
-    for (let step = 0; step < 36; step += 1) school.update(STEP, (time += STEP));
-    expect(length(sub(fish.spine[0], headBefore))).toBeGreaterThan(length(sub(fish.spine[4], middleBefore)));
+    fish.pivotHeading = wrapAngle(fish.heading + 2.2);
+    let turned = 0;
+    let travelled = 0;
+    let time = 0;
+    for (let step = 0; step < 240; step += 1) {
+      const heading = fish.heading;
+      const head = { ...fish.position };
+      school.update(STEP, (time += STEP));
+      turned += Math.abs(wrapAngle(fish.heading - heading));
+      travelled += length(sub(fish.position, head));
+    }
+    expect(turned).toBeGreaterThan(1.5);
+    // The head swims at least the arc of its tightest circle for that turn.
+    const tightestRadius = fish.bodyLength / school.maximumBend(fish);
+    expect(travelled).toBeGreaterThan(tightestRadius * turned * 0.8);
+  });
+
+  it("keeps drifting, sculling its fins, and swaying its tail while holding still", () => {
+    const school = lone();
+    const fish = school.fish[0];
+    fish.state = SwimState.Hover;
+    fish.stateAge = 0;
+    fish.stateDuration = 99;
+    let time = 0;
+    for (let step = 0; step < 120; step += 1) school.update(STEP, (time += STEP));
+    const start = { ...fish.position };
+    const fins = fish.finPhase;
+    const tail = fish.swimPhase;
+    for (let step = 0; step < 180; step += 1) school.update(STEP, (time += STEP));
+    expect(fish.finPhase - fins).toBeGreaterThan(9);
+    expect(fish.swimPhase - tail).toBeGreaterThan(3);
+    expect(fish.tailEffort).toBeGreaterThan(0.15);
+    const drift = length(sub(fish.position, start));
+    expect(drift).toBeGreaterThan(0.5);
+    expect(drift).toBeLessThan(20);
+  });
+
+  it("sways like a fish, not an eel: the front of the body stays nearly still", () => {
+    const fish = new School().fish[0];
+    fish.tailEffort = 1;
+    let front = 0;
+    let tail = 0;
+    for (let phase = 0; phase < Math.PI * 2; phase += 0.05) {
+      fish.swimPhase = phase;
+      front = Math.max(front, Math.abs(swimWave(fish, 0.35)));
+      tail = Math.max(tail, Math.abs(swimWave(fish, 1)));
+    }
+    expect(front).toBeLessThan(tail * 0.2);
   });
 });
