@@ -531,7 +531,11 @@ export function App() {
 
     const resizeObserver = new ResizeObserver(() => {
       const nextSize = pondRenderSize(display);
-      if (nextSize.width === CANVAS_WIDTH && nextSize.height === CANVAS_HEIGHT) return;
+      if (nextSize.width === CANVAS_WIDTH && nextSize.height === CANVAS_HEIGHT) {
+        // Same pond, but it may fill more or less of the screen (caps pixel detail).
+        renderer.refreshRenderSize();
+        return;
+      }
       const oldWidth = CANVAS_WIDTH;
       const oldHeight = CANVAS_HEIGHT;
       setCanvasSize(nextSize.width, nextSize.height);

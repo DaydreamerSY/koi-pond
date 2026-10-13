@@ -146,6 +146,9 @@ export function QuickSettings({
   const [randomWeather, setRandomWeather] = useSetting<boolean>(["atmosphere", "randomWeather"]);
   const [randomMinutes] = useSetting<number>(["atmosphere", "randomMinutes"]);
 
+  const [pixelDetail, setPixelDetail] = useSetting<number>(["display", "pixelDetail"]);
+  const pixelDetailRange = definition.children.display.children.pixelDetail;
+
   const [duckCount, setDuckCount] = useSetting<number>(["ducks", "visibleCount"]);
   const [crabCount, setCrabCount] = useSetting<number>(["crabs", "visibleCount"]);
   const [shrimpCount, setShrimpCount] = useSetting<number>(["shrimp", "visibleCount"]);
@@ -420,6 +423,22 @@ export function QuickSettings({
           </div>
           <Switch id="quick-sound" checked={soundEnabled} onCheckedChange={onSoundChange} />
         </div>
+      </section>
+
+      <section className="settings-quick__section" aria-labelledby="quick-display-heading">
+        <div className="settings-quick__heading">
+          <div className="settings-quick__heading-row"><h3 id="quick-display-heading">Display</h3><button type="button" className="settings-section-reset" onClick={() => onResetSection(["display"])}><RotateCcw aria-hidden="true" /> Reset</button></div>
+          <p>Make the pixel art chunkier or smoother; the pond itself stays the same.</p>
+        </div>
+        <SettingSlider
+          label="Pixel detail"
+          description={`${pixelDetail}× · 1 is the original look. Higher is smoother and works the GPU harder; lower is chunkier.`}
+          value={pixelDetail}
+          min={pixelDetailRange.min ?? 0.5}
+          max={pixelDetailRange.max ?? 4}
+          step={pixelDetailRange.step ?? 0.25}
+          onChange={setPixelDetail}
+        />
       </section>
     </div>
   );

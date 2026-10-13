@@ -1020,6 +1020,27 @@ const atmosphere = group(
   { label: "Atmosphere", effect: "atmosphere:live" },
 );
 
+// ---- display ----------------------------------------------------------------
+// The pond's world stays the same size (480×270-ish pond pixels); this only
+// changes how many render pixels each pond pixel gets before the canvas is
+// scaled up to the screen.
+
+const display = group(
+  {
+    pixelDetail: num({
+      default: 1,
+      min: 0.5,
+      max: 4,
+      step: 0.25,
+      unit: "×",
+      label: "Pixel detail",
+      description:
+        "Render pixels per pond pixel. 1 is the original pixel art; higher is smoother (more GPU work), lower is chunkier. Never finer than the screen.",
+    }),
+  },
+  { label: "Display", effect: "display:pixels" },
+);
+
 // ---- pond visitors: ducks, crabs, shrimp, frogs ------------------------
 // Behavior and look are read live every frame; only the fields that change
 // how many there are (or their spawn-time size) respawn them.
@@ -1235,6 +1256,7 @@ export const definition = group({
   water,
   ripples,
   atmosphere,
+  display,
   lotus,
   "lotus-leaves": lotusLeaves,
   "lotus-flowers": lotusFlowers,
@@ -1280,6 +1302,7 @@ export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   { id: "duckweed", title: "Duckweed", description: "Leaf appearance and floating patches.", sectionIds: ["duckweed", "duckweed-patches"] },
   { id: "butterflies", title: "Butterflies", description: "Flight behavior, colors, and spawn points.", sectionIds: ["butterflies", "butterfly-spawns"] },
   { id: "visitors", title: "Pond visitors", description: "Ducks, crabs, shrimp, and frogs that share the pond.", sectionIds: ["ducks", "duck-spawns", "crabs", "shrimp", "frogs"] },
+  { id: "display", title: "Display", description: "How finely the pond's pixels are drawn.", sectionIds: ["display"] },
 ];
 
 export const SECTION_TITLES: Record<SectionId, string> = {
@@ -1292,6 +1315,7 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   water: "Water",
   ripples: "Ripples",
   atmosphere: "Atmosphere",
+  display: "Display",
   lotus: "Lotus",
   "lotus-leaves": "Lotus placements",
   "lotus-flowers": "Lotus flowers",
@@ -1316,6 +1340,7 @@ export const SECTION_DESCRIPTIONS: Record<SectionId, string> = {
   water: "Current layers, distortion, and tint.",
   ripples: "Touch, rain, koi-mouth, and duck-wake ripples plus rainfall frequency.",
   atmosphere: "Random weather that changes every few minutes.",
+  display: "Pixel detail: chunkier or smoother pixels, same pond.",
   lotus: "Leaf and flower geometry, drift, shadows, and palettes.",
   "lotus-leaves": "Position, scale, rotation, and palette for every leaf.",
   "lotus-flowers": "Leaf attachment, position, size, and palette.",

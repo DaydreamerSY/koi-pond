@@ -110,6 +110,10 @@ export class PondBedPass {
     this.mesh.geometry.dispose();
     this.mesh.geometry = new THREE.PlaneGeometry(width, height);
     this.mesh.position.set(width * 0.5, height * 0.5, -1);
+  }
+
+  /** The grain follows the render pixels, so finer pixel detail gives finer specks. */
+  public setGrainResolution(width: number, height: number): void {
     this.material.uniforms.uResolution.value.set(width, height);
   }
 

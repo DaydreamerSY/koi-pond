@@ -70,6 +70,7 @@ export const DUCK_SPAWNS = live["duck-spawns"];
 export const CRABS = live.crabs;
 export const SHRIMP = live.shrimp;
 export const FROGS = live.frogs;
+export const DISPLAY = live.display;
 
 // The settings coordinates above remain in the original landscape layout.
 // The simulation and renderer use these live dimensions for the visible pond.

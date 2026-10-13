@@ -43,12 +43,13 @@ git diff 01e93a4 HEAD:web
   - Khi dừng, cá vẫn trôi rất chậm, đuôi đưa nhẹ, vây ngực quạt liên tục, giảm tốc êm thay vì phanh gấp.
   - "Xua đàn cá" làm cá lao đi và rẽ ngoặt, không còn quay ngoắt tại chỗ.
   - Chỉnh nhanh trong mục **Koi motion** của bảng cài đặt (độ vẫy đuôi, độ cong thân khi rẽ, độ gắt khi rẽ/quay đầu, chữ C tối đa, độ mượt), chi tiết hơn trong **Koi › Turning** và **Koi › Swimming**.
+- **Độ mịn pixel** (mục cài đặt **Display › Pixel detail**, `fish-renderer.ts`): hồ vẫn giữ nguyên kích thước, chỉ đổi số pixel dùng để vẽ mỗi pixel của hồ, từ 0,5× (pixel to, vỡ hơn) đến 4× (mịn hơn, GPU làm nặng hơn); 1× là bản gốc. Không bao giờ vẽ mịn hơn số pixel thật của màn hình. Ở mức cao, đường gân lá sen và chân cua, tôm mảnh hơn vì luôn rộng đúng 1 pixel.
 - **Nhẹ máy hơn, hình vẫn y nguyên**:
   - Khi giới hạn fps (mặc định 30), giữa hai khung hình hồ cá ngủ trên một bộ hẹn giờ rồi mới xin khung hình kế tiếp, thay vì thức dậy theo mọi nhịp quét của màn hình (144–165 Hz) chỉ để bỏ qua (`frame-limiter.ts`, `app.tsx`). Số lần đánh thức trình duyệt giảm khoảng một nửa (126 → 60 lần/giây trên màn 164 Hz), CPU giảm khoảng 25–35%, khung hình còn đều hơn trước.
   - Bóng đổ một màu (lá sen, bèo, vịt, ếch, cua, tôm, bướm, cá nhỏ) được vẽ một lượt thay vì hai lượt mặt sau/mặt trước như three.js mặc định làm với vật thể trong suốt hai mặt; trước đây mỗi khung hình phải tính lại shader cho khoảng 22 lớp bóng (`forceSinglePass`).
   - Hình tròn, elip tính sẵn bảng sin/cos và mỗi điểm viền chỉ tính một lần, không tạo đối tượng tạm; kết quả trùng khớp từng bit với cách cũ (`math.ts`, `surface-geometry.ts`, `fish-renderer.ts`).
   - WebGL xin GPU tiết kiệm điện (`powerPreference: "low-power"`, máy hai GPU sẽ không phải đánh thức card rời) và bỏ bộ đệm độ sâu không dùng tới.
-- Nối các phần trên vào `app.tsx`, `school.ts`, `fish-renderer.ts`, `lotus-leaves.ts`, `butterflies.ts`, `settings/definition.ts`, `settings/effects.ts`, `quick-settings.tsx`, `styles.css`, `config.ts`, `surface-geometry.ts`.
+- Nối các phần trên vào `app.tsx`, `school.ts`, `fish-renderer.ts`, `lotus-leaves.ts`, `butterflies.ts`, `settings/definition.ts`, `settings/effects.ts`, `quick-settings.tsx`, `styles.css`, `config.ts`, `surface-geometry.ts`, `pond-bed.ts`.
 - Test mới: `src/pond-visitors.test.ts` (gồm cả lá sen), `src/koi-turning.test.ts`, `src/weather-cycle.test.ts`, và thêm test trong `store.test.ts`, `schema.test.ts`.
 - Thêm `package-lock.json` để cài đặt ổn định.
 

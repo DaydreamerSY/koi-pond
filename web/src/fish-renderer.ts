@@ -2,6 +2,7 @@ import * as THREE from "three";
 import {
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
+  DISPLAY,
   FISH,
   KOI_PALETTES,
   MAX_FISH,
@@ -270,6 +271,13 @@ export class FishRenderer {
   private previousAppearanceTime = -1;
   private currentVisualDepth = 0;
   private previewFamilyIndex: number | null = null;
+  private renderWidth = 0;
+  private renderHeight = 0;
+  // The last frame drawn, redrawn after a resize clears the canvas (a paused
+  // pond draws nothing new until it resumes).
+  private lastSchool: School | null = null;
+  private lastTime = 0;
+  private lastShowDebug = false;
 
   public constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -383,6 +391,28 @@ export class FishRenderer {
     lines.renderOrder = 3;
     this.fishShadowScene.add(shadowMesh);
     this.fishScene.add(outerMesh, bodyMesh, lines);
+    this.refreshRenderSize();
+  }
+
+  /**
+   * Draws the pond at DISPLAY.pixelDetail render pixels per pond pixel: the
+   * camera still spans the same pond, so only the pixels get finer or
+   * chunkier. Never finer than the screen shows the canvas.
+   */
+  public refreshRenderSize(): void {
+    const shown = this.canvas.clientWidth * (window.devicePixelRatio || 1);
+    const finest = shown > 0 ? Math.max(1, shown / CANVAS_WIDTH) : Infinity;
+    const detail = Math.min(DISPLAY.pixelDetail, finest);
+    const width = Math.max(1, Math.round(CANVAS_WIDTH * detail));
+    const height = Math.max(1, Math.round(CANVAS_HEIGHT * detail));
+    this.pondBed.setGrainResolution(width, height);
+    if (width === this.renderWidth && height === this.renderHeight) return;
+    this.renderWidth = width;
+    this.renderHeight = height;
+    this.renderer.setSize(width, height, false);
+    this.underwaterTarget.setSize(width, height);
+    this.compositeTarget.setSize(width, height);
+    if (this.lastSchool) this.draw(this.lastSchool, this.lastTime, this.lastShowDebug);
   }
 
   public refreshConfig(): void {
@@ -438,9 +468,6 @@ export class FishRenderer {
   }
 
   public resize(width: number, height: number, oldWidth: number, oldHeight: number): void {
-    this.renderer.setSize(width, height, false);
-    this.underwaterTarget.setSize(width, height);
-    this.compositeTarget.setSize(width, height);
     this.camera.right = width;
     this.camera.bottom = height;
     this.camera.updateProjectionMatrix();
@@ -448,6 +475,7 @@ export class FishRenderer {
     this.surfaceDisturbance.resize(width, height);
     this.waterSurface.resize(width, height);
     this.butterflies.resize(width / oldWidth, height / oldHeight);
+    this.refreshRenderSize();
   }
 
   public dispose(): void {
@@ -468,6 +496,9 @@ export class FishRenderer {
   }
 
   public draw(school: School, time: number, showDebug: boolean): void {
+    this.lastSchool = school;
+    this.lastTime = time;
+    this.lastShowDebug = showDebug;
     if (this.previousAppearanceTime >= 0) {
       const deltaTime = Math.min(
         0.1,

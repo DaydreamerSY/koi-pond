@@ -78,6 +78,7 @@ const HANDLERS: Record<string, EffectHandler> = {
   "lotus:live": { run: () => {} },
   // The random-weather cycle (app.tsx) reads these through React.
   "atmosphere:live": { run: () => {} },
+  "display:pixels": { run: (runtime) => runtime.renderer.refreshRenderSize() },
   "duckweed:rebuild": { heavy: true, run: (runtime) => runtime.renderer.refreshSection("duckweed") },
   // Ripple-response settings are read live every frame; the tag only exists to
   // override the parent group's heavy "duckweed:rebuild".
