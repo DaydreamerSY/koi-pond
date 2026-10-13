@@ -6,6 +6,7 @@ import { SettingsColorInput, SettingsSlider } from "./settings-controls";
 import { useSetting } from "./settings/react";
 import { settings } from "./settings/store";
 import type { SectionId } from "./settings/definition";
+import { definition } from "./settings/definition";
 import { WEATHER_PRESETS, type WeatherPresetId } from "./weather";
 
 interface QuickSettingsProps {
@@ -112,6 +113,27 @@ export function QuickSettings({
   const [marking, setMarking] = useSetting<number>(["koi-palettes", paletteIndex, "marking"]);
   const [fin, setFin] = useSetting<number>(["koi-palettes", paletteIndex, "fin"]);
 
+  // Koi motion: how the body bends in turns and how hard the tail sways.
+  const motion = {
+    tailSway: useSetting<number>(["koi", "swimming", "tailAmplitude"]),
+    tailFromSpeed: useSetting<number>(["koi", "swimming", "speedTailEffort"]),
+    bodyBend: useSetting<number>(["koi", "turning", "bodyFollow"]),
+    cruiseTurn: useSetting<number>(["koi", "turning", "cruiseTightness"]),
+    turnaround: useSetting<number>(["koi", "turning", "pivotTightness"]),
+    tightestC: useSetting<number>(["koi", "turning", "maxBodyBend"]),
+    smoothing: useSetting<number>(["koi", "turning", "bodyResponse"]),
+  };
+  const resetMotion = (): void => {
+    const { swimming, turning } = definition.children.koi.children;
+    motion.tailSway[1](swimming.children.tailAmplitude.default);
+    motion.tailFromSpeed[1](swimming.children.speedTailEffort.default);
+    motion.bodyBend[1](turning.children.bodyFollow.default);
+    motion.cruiseTurn[1](turning.children.cruiseTightness.default);
+    motion.turnaround[1](turning.children.pivotTightness.default);
+    motion.tightestC[1](turning.children.maxBodyBend.default);
+    motion.smoothing[1](turning.children.bodyResponse.default);
+  };
+
   const [deepColor, setDeepColor] = useSetting<readonly [number, number, number]>(["pond-bed", "deepColor"]);
   const [shallowColor, setShallowColor] = useSetting<readonly [number, number, number]>(["pond-bed", "shallowColor"]);
   const [clarity, setClarity] = useSetting<number>(["water", "clarity"]);
@@ -176,6 +198,76 @@ export function QuickSettings({
           <QuickColor id="quick-koi-marking" label="Dark markings" value={hexFromInt(marking)} onChange={(hex) => setMarking(Number.parseInt(hex.slice(1), 16))} />
           <QuickColor id="quick-koi-fin" label="Fins" value={hexFromInt(fin)} onChange={(hex) => setFin(Number.parseInt(hex.slice(1), 16))} />
         </div>
+      </section>
+
+      <section className="settings-quick__section" aria-labelledby="quick-motion-heading">
+        <div className="settings-quick__heading">
+          <div className="settings-quick__heading-row"><h3 id="quick-motion-heading">Koi motion</h3><button type="button" className="settings-section-reset" onClick={resetMotion}><RotateCcw aria-hidden="true" /> Reset</button></div>
+          <p>How the tail sways and how far the body bends in turns. More in Advanced controls › Koi › Turning and Swimming.</p>
+        </div>
+        <SettingSlider
+          label="Tail sway"
+          description="How far the tail swings to each side at full effort (share of body width)."
+          value={motion.tailSway[0]}
+          min={0}
+          max={1.5}
+          step={0.01}
+          onChange={(value) => motion.tailSway[1](value)}
+        />
+        <SettingSlider
+          label="Tail effort from speed"
+          description="How much harder the tail works as the koi speeds up. A slow koi only sways it."
+          value={motion.tailFromSpeed[0]}
+          min={0}
+          max={1.5}
+          step={0.01}
+          onChange={(value) => motion.tailFromSpeed[1](value)}
+        />
+        <SettingSlider
+          label="Body bend in turns"
+          description="How much the body curves along a turn (1 = follows the curve exactly, 0 = stays straight)."
+          value={motion.bodyBend[0]}
+          min={0}
+          max={1}
+          step={0.01}
+          onChange={(value) => motion.bodyBend[1](value)}
+        />
+        <SettingSlider
+          label="Cruising turn tightness"
+          description="How sharply a cruising koi turns, as a share of its tightest C. Lower = wider, gentler turns."
+          value={motion.cruiseTurn[0]}
+          min={0.05}
+          max={1}
+          step={0.01}
+          onChange={(value) => motion.cruiseTurn[1](value)}
+        />
+        <SettingSlider
+          label="Turnaround tightness"
+          description="How sharply a koi turning around turns, as a share of its tightest C."
+          value={motion.turnaround[0]}
+          min={0.05}
+          max={1}
+          step={0.01}
+          onChange={(value) => motion.turnaround[1](value)}
+        />
+        <SettingSlider
+          label="Tightest C (radians)"
+          description="The most any koi can curl, head to tail; longer koi a bit less (2.5 ≈ 143°)."
+          value={motion.tightestC[0]}
+          min={0.3}
+          max={2.9}
+          step={0.01}
+          onChange={(value) => motion.tightestC[1](value)}
+        />
+        <SettingSlider
+          label="Body curve smoothing (s)"
+          description="How lazily the body's curve follows a change of turn. Higher = smoother."
+          value={motion.smoothing[0]}
+          min={0.05}
+          max={1.5}
+          step={0.01}
+          onChange={(value) => motion.smoothing[1](value)}
+        />
       </section>
 
       <section className="settings-quick__section" aria-labelledby="quick-water-heading">

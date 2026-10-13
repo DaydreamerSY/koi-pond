@@ -36,7 +36,7 @@ export class Koi {
   public callDelay = 0;
   public respondedToCall = false;
   public callResponseAge = 0;
-  public tailEffort = 0.6;
+  public tailEffort = 0.3;
   public depth = 0.08;
   public targetDepth = 0.08;
   public depthTransitionRate = 1;
@@ -103,7 +103,7 @@ export class Koi {
     this.stateDuration = random.range(low, high);
     this.stateAge = random.range(0, this.stateDuration * 0.8);
     this.pivotHeading = this.heading;
-    this.tailEffort = 0.6;
+    this.tailEffort = 0.3;
     this.angularVelocity = 0;
     this.velocity = mul(fromAngle(this.heading), this.speed);
 
@@ -123,6 +123,6 @@ export class Koi {
 export function swimWave(fish: Koi, t: number): number {
   const swimming = FISH.swimming;
   const envelope = Math.pow(t, swimming.envelopePower);
-  const effort = 0.1 + Math.min(fish.tailEffort, 1.3) * 0.9;
+  const effort = Math.min(fish.tailEffort, 1.2);
   return Math.sin(fish.swimPhase - t * swimming.waveNumber) * fish.bodyWidth * swimming.tailAmplitude * envelope * effort;
 }

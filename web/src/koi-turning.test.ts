@@ -100,6 +100,64 @@ describe("koi swimming and turning", () => {
     expect(drift).toBeLessThan(20);
   });
 
+  it("starting off from rest, only sways its tail gently and keeps its body nearly straight while slow", () => {
+    const school = lone();
+    const fish = school.fish[0];
+    fish.state = SwimState.Hover;
+    fish.stateAge = 0;
+    fish.stateDuration = 99;
+    let time = 0;
+    for (let step = 0; step < 180; step += 1) school.update(STEP, (time += STEP));
+    // From rest, a koi often sets off by turning around.
+    fish.state = SwimState.Pivot;
+    fish.stateAge = 0;
+    fish.stateDuration = 0.6;
+    fish.pivotHeading = wrapAngle(fish.heading + 2.2);
+    let effortWhileSlow = 0;
+    let bendWhileSlow = 0;
+    for (let step = 0; step < 120; step += 1) {
+      school.update(STEP, (time += STEP));
+      if (fish.speed > fish.cruiseSpeed * 0.35) break;
+      effortWhileSlow = Math.max(effortWhileSlow, fish.tailEffort);
+      bendWhileSlow = Math.max(bendWhileSlow, Math.abs(fish.curvature) * fish.bodyLength);
+    }
+    expect(effortWhileSlow).toBeLessThan(0.4);
+    expect(bendWhileSlow).toBeLessThan(0.4);
+  });
+
+  it("keeps its body nearly straight on ordinary cruising turns", () => {
+    const school = lone();
+    const fish = school.fish[0];
+    fish.state = SwimState.Glide;
+    fish.stateAge = 0;
+    fish.stateDuration = 999;
+    let time = 0;
+    let bend = 0;
+    for (let step = 0; step < 60 * 30; step += 1) {
+      school.update(STEP, (time += STEP));
+      bend = Math.max(bend, Math.abs(fish.curvature) * fish.bodyLength);
+    }
+    // Under about 35°, head to tail.
+    expect(bend).toBeLessThan(0.6);
+  });
+
+  it("works its tail harder the faster it swims", () => {
+    const effortAt = (state: SwimState): number => {
+      const school = lone();
+      const fish = school.fish[0];
+      fish.state = state;
+      fish.stateAge = 0;
+      fish.stateDuration = 999;
+      let time = 0;
+      for (let step = 0; step < 240; step += 1) school.update(STEP, (time += STEP));
+      return fish.tailEffort;
+    };
+    const holding = effortAt(SwimState.Hover);
+    const cruising = effortAt(SwimState.Glide);
+    expect(holding).toBeLessThan(0.2);
+    expect(cruising).toBeGreaterThan(holding + 0.15);
+  });
+
   it("sways like a fish, not an eel: the front of the body stays nearly still", () => {
     const fish = new School().fish[0];
     fish.tailEffort = 1;

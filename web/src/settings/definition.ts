@@ -146,42 +146,84 @@ const koi = group(
       }),
     }),
     // A koi never spins on the spot: it turns by swimming forward along a
-    // curve, and its body bends along that curve into at most a C. A longer
-    // koi is stiffer, so its tightest turn is wider.
+    // curve, and its body bends along that curve. How far it may bend is
+    // capped by its length (a longer koi is stiffer), by what kind of turn it
+    // is making, and by how fast it is going (a slow koi barely bends).
     turning: group({
       maxBodyBend: num({
         default: 2.5, min: 0.3, max: 2.9, step: 0.01, unit: "rad",
-        description: "How far a koi of the reference length can curl into a C, head to tail (2.5 rad ≈ 143°).",
+        label: "Tightest C (head to tail)",
+        description: "The most a koi of the reference length can ever curl, head to tail (2.5 rad ≈ 143°). Only a koi racing to food gets near it.",
       }),
       referenceLength: num({ default: 30, min: 5, max: 80, step: 0.5, unit: "px" }),
       lengthStiffness: num({
         default: 0.4, min: 0, max: 2, step: 0.05,
         description: "Longer koi bend less: the C limit scales by (reference length ÷ body length) to this power.",
       }),
+      bodyFollow: num({
+        default: 0.6, min: 0, max: 1, step: 0.01,
+        label: "Body bend in turns",
+        description: "How much the body curves along the turn it is swimming (1 = exactly the curve of its path, 0 = stays straight).",
+      }),
+      cruiseTightness: num({
+        default: 0.3, min: 0.05, max: 1, step: 0.01,
+        label: "Cruising turn tightness",
+        description: "How sharply a cruising koi may turn, as a share of its tightest C. Lower = wider, gentler turns.",
+      }),
+      pivotTightness: num({
+        default: 0.7, min: 0.05, max: 1, step: 0.01,
+        label: "Turnaround tightness",
+        description: "How sharply a koi turning around may turn, as a share of its tightest C. A koi racing to food uses all of it.",
+      }),
+      fullBendSpeed: num({
+        default: 1, min: 0.05, max: 3, step: 0.05,
+        label: "Speed for full bend",
+        description: "A koi needs this share of its cruise speed before it may bend fully; slower, it bends proportionally less.",
+      }),
       idleTurnSpeed: num({
         default: 2.5, min: 0, max: 20, step: 0.1, unit: "px/s",
         description: "How fast a nearly still koi can still turn, as if it were swimming this fast.",
       }),
       bodyResponse: num({
-        default: 0.3, min: 0.01, max: 2, step: 0.01, unit: "s",
-        description: "How quickly the body's curve follows a change of turn.",
+        default: 0.35, min: 0.01, max: 2, step: 0.01, unit: "s",
+        label: "Body curve smoothing",
+        description: "How slowly the body's curve follows a change of turn (higher = smoother, lazier).",
       }),
       turnEase: num({
-        default: 6, min: 0.5, max: 60, step: 0.5, unit: "rad/s²",
+        default: 5, min: 0.5, max: 60, step: 0.5, unit: "rad/s²",
         description: "How quickly a koi can start or stop turning.",
-      }),
-      cruiseTightness: num({
-        default: 0.7, min: 0.1, max: 1, step: 0.01,
-        description: "Share of its tightest turn a koi uses while cruising.",
-      }),
-      pivotTightness: num({
-        default: 0.9, min: 0.1, max: 1, step: 0.01,
-        description: "Share of its tightest turn a koi uses to turn around. A koi racing to food uses all of it.",
       }),
     }),
     // Koi swim like fish, not eels: the front of the body stays nearly still
-    // and the wave grows toward the tail.
+    // and the sway grows toward the tail. The tail works as hard as the
+    // swimming needs: harder the faster the koi goes and the harder it speeds
+    // up; a slow koi only sways it.
     swimming: group({
+      tailAmplitude: num({
+        default: 0.55, min: 0, max: 3, step: 0.01,
+        label: "Tail sway",
+        description: "How far the tail swings to each side at full effort, as a share of the body width.",
+      }),
+      idleTailEffort: num({
+        default: 0.12, min: 0, max: 1, step: 0.01,
+        label: "Tail effort when still",
+        description: "Tail effort while barely moving (0–1).",
+      }),
+      speedTailEffort: num({
+        default: 0.7, min: 0, max: 2, step: 0.01,
+        label: "Tail effort from speed",
+        description: "Extra tail effort at full speed.",
+      }),
+      accelerationTailEffort: num({
+        default: 0.35, min: 0, max: 2, step: 0.01,
+        label: "Tail effort from speeding up",
+        description: "Extra tail effort while speeding up hard.",
+      }),
+      effortResponse: num({
+        default: 2.2, min: 0.1, max: 20, step: 0.1, unit: "/s",
+        label: "Tail effort smoothing",
+        description: "How quickly the tail's effort follows the swimming (lower = smoother).",
+      }),
       waveNumber: num({
         default: 3.6, min: 0, max: 12, step: 0.05,
         description: "How much of a wave fits along the body (6.3 = a whole wave, eel-like; lower = stiffer, more fish-like).",
@@ -190,12 +232,10 @@ const koi = group(
         default: 2.4, min: 0.5, max: 6, step: 0.05,
         description: "How much the sway is kept to the tail end (higher = stiller front of the body).",
       }),
-      tailAmplitude: num({ default: 0.75, min: 0, max: 3, step: 0.01, description: "Tail sway, as a share of the body width." }),
       strokeSurge: num({
-        default: 0.12, min: 0, max: 1, step: 0.01,
+        default: 0.06, min: 0, max: 1, step: 0.01,
         description: "How much each stroke of the tail pushes the koi forward in a pulse.",
       }),
-      hoverTailEffort: num({ default: 0.22, min: 0, max: 1, step: 0.01, description: "Gentle tail motion while holding still." }),
       hoverDrift: num({
         default: 0.08, min: 0, max: 0.5, step: 0.01,
         description: "A holding koi still drifts at this share of its cruise speed.",

@@ -477,30 +477,36 @@ export class School {
 
   private integrate(fish: Koi, desired: Vec2, desiredSpeed: number, dt: number): void {
     let speedResponse = 1.65;
-    let desiredTailEffort = 0.62;
+    // Gliding koi hold their tails nearly still.
+    let tailUse = 1;
     switch (fish.state) {
       case SwimState.Glide:
         break;
       case SwimState.Coast:
         speedResponse = 1.05;
-        desiredTailEffort = 0.16;
+        tailUse = 0.35;
         break;
       case SwimState.Hover:
         // Ease to a near stop rather than braking; the fins keep sculling.
         speedResponse = 1.3;
-        desiredTailEffort = FISH.swimming.hoverTailEffort;
         break;
       case SwimState.Burst:
         speedResponse = 6.4;
-        desiredTailEffort = 1.22;
         break;
       case SwimState.Pivot:
         speedResponse = 3.2;
-        desiredTailEffort = 0.9;
         break;
     }
     fish.speed += (desiredSpeed - fish.speed) * (1 - Math.exp(-speedResponse * dt));
-    fish.tailEffort += (desiredTailEffort - fish.tailEffort) * (1 - Math.exp(-4.5 * dt));
+
+    // The tail works as hard as the swimming needs: harder the faster the koi
+    // goes and the harder it speeds up. A slow koi only sways it.
+    const swimming = FISH.swimming;
+    const pace = clamp(fish.speed / fish.maximumSpeed, 0, 1.3);
+    const push = clamp((desiredSpeed - fish.speed) / fish.maximumSpeed, 0, 1);
+    const desiredTailEffort =
+      (swimming.idleTailEffort + pace * swimming.speedTailEffort + push * swimming.accelerationTailEffort) * tailUse;
+    fish.tailEffort += (desiredTailEffort - fish.tailEffort) * (1 - Math.exp(-swimming.effortResponse * dt));
 
     const desiredHeading = Math.atan2(desired.y, desired.x);
     const headingError = wrapAngle(desiredHeading - fish.heading);
@@ -516,33 +522,32 @@ export class School {
     );
     fish.angularVelocity += angularAcceleration * dt;
     // A koi never spins on the spot: it turns by swimming forward along a
-    // curve no tighter than its body can bend, so the slower it swims the
-    // slower it turns, and a longer koi turns wider. Only a koi racing to
-    // food turns as tightly as it can.
+    // curve. How tight that curve may be depends on its body (a longer koi is
+    // stiffer), on the kind of turn (only a koi racing to food turns as hard
+    // as it can), and on its speed (a slow koi barely bends).
     const chasing = this.targetActive && fish.respondedToCall;
     const tightness = chasing || fish.state === SwimState.Burst
       ? 1
       : pivoting ? turning.pivotTightness : turning.cruiseTightness;
+    const bendForSpeed = clamp(fish.speed / Math.max(fish.cruiseSpeed * turning.fullBendSpeed, 0.001), 0.1, 1);
+    const curvatureLimit = (this.maximumBend(fish) / fish.bodyLength) * tightness * bendForSpeed;
     const steerage = Math.max(fish.speed, turning.idleTurnSpeed);
-    const minimumRadius = fish.bodyLength / this.maximumBend(fish);
-    const turnLimit = Math.min(pivoting ? 4.35 : 2.25, (steerage / minimumRadius) * tightness);
+    const turnLimit = Math.min(pivoting ? 4.35 : 2.25, steerage * curvatureLimit);
     fish.angularVelocity = clamp(fish.angularVelocity, -turnLimit, turnLimit);
     fish.heading = wrapAngle(fish.heading + fish.angularVelocity * dt);
 
     // Thrust comes in pulses, one per stroke of the tail.
-    const stroke = 1 + FISH.swimming.strokeSurge * Math.min(fish.tailEffort, 1) * Math.sin(2 * fish.swimPhase);
+    const stroke = 1 + swimming.strokeSurge * Math.min(fish.tailEffort, 1) * Math.sin(2 * fish.swimPhase);
     fish.velocity = mul(fromAngle(fish.heading), fish.speed * stroke);
     fish.position = add(fish.position, mul(fish.velocity, dt));
 
-    const speedShare = clamp(fish.speed / fish.maximumSpeed, 0, 1.5);
-    fish.swimPhase += (1.2 + speedShare * 6 + fish.tailEffort * 1.2) * dt;
-    fish.finPhase += (3 + (1 - Math.min(speedShare, 1)) * 3) * dt;
+    fish.swimPhase += (1.2 + Math.min(pace, 1) * 6 + fish.tailEffort * 1.2) * dt;
+    fish.finPhase += (3 + (1 - Math.min(pace, 1)) * 3) * dt;
 
-    // The body bends along the curve the head is swimming: an even arc whose
-    // curvature is turn rate over speed, settling like a body would.
-    const curvatureLimit = this.maximumBend(fish) / fish.bodyLength;
-    const targetCurvature = clamp(fish.angularVelocity / steerage, -curvatureLimit, curvatureLimit);
-    fish.curvature += (targetCurvature - fish.curvature) * (1 - Math.exp(-dt / FISH.turning.bodyResponse));
+    // The body bends along the curve the head is swimming (or a share of it):
+    // an even arc, settling like a body would.
+    const targetCurvature = (fish.angularVelocity / steerage) * turning.bodyFollow;
+    fish.curvature += (targetCurvature - fish.curvature) * (1 - Math.exp(-dt / turning.bodyResponse));
     this.layBody(fish);
   }
 

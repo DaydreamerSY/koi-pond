@@ -36,10 +36,12 @@ git diff 01e93a4 HEAD:web
 - **Cá bơi như cá** (`src/school.ts`, `src/koi.ts`): bản gốc để đầu cá quay tự do còn thân bám theo vệt đường đi, cộng sóng lắc dọc cả thân kiểu lươn, nên cá trông như trườn, và khi quay tại chỗ đầu gập ngược sát thân. Giờ:
   - Cá luôn tiến theo hướng đầu, không tự xoay. Muốn quay thì phải bơi tới theo một đường cong, và đường cong không gắt hơn mức thân cá uốn được (tối đa thành chữ C, cá dài cứng hơn nên quay rộng hơn).
   - Thân là một cung tròn theo đúng đường cong đang bơi; độ cong và tốc độ quay thay đổi êm.
-  - Sóng bơi kiểu cá: nửa thân trước gần như yên, đuôi quẫy với biên độ nhỏ hơn, mỗi nhịp quẫy đẩy cá nhích tới.
+  - Sóng bơi kiểu cá: nửa thân trước gần như yên, đuôi quẫy, mỗi nhịp quẫy đẩy cá nhích tới.
+  - Đuôi quẫy mạnh hay nhẹ theo tốc độ thật và mức đang tăng tốc (đổi êm), không theo trạng thái: cá chậm chỉ đưa đuôi nhẹ, lúc lướt đuôi gần như yên.
+  - Độ cong cho phép tăng dần theo tốc độ (cá chậm gần như không uốn); rẽ thường chỉ dùng phần nhỏ độ cong tối đa và thân chỉ cong theo một phần đường đi, nên vào cua thân vẫn gần thẳng. Chỉ khi lao tới mồi cá mới uốn hết cỡ.
   - Khi dừng, cá vẫn trôi rất chậm, đuôi đưa nhẹ, vây ngực quạt liên tục, giảm tốc êm thay vì phanh gấp.
   - "Xua đàn cá" làm cá lao đi và rẽ ngoặt, không còn quay ngoắt tại chỗ.
-  - Chỉnh trong **Koi › Turning** và **Koi › Swimming**.
+  - Chỉnh nhanh trong mục **Koi motion** của bảng cài đặt (độ vẫy đuôi, độ cong thân khi rẽ, độ gắt khi rẽ/quay đầu, chữ C tối đa, độ mượt), chi tiết hơn trong **Koi › Turning** và **Koi › Swimming**.
 - Nối các phần trên vào `app.tsx`, `school.ts`, `fish-renderer.ts`, `lotus-leaves.ts`, `butterflies.ts`, `settings/definition.ts`, `settings/effects.ts`, `quick-settings.tsx`, `styles.css`, `config.ts`, `surface-geometry.ts`.
 - Test mới: `src/pond-visitors.test.ts` (gồm cả lá sen), `src/koi-turning.test.ts`, `src/weather-cycle.test.ts`, và thêm test trong `store.test.ts`, `schema.test.ts`.
 - Thêm `package-lock.json` để cài đặt ổn định.
