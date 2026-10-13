@@ -201,6 +201,7 @@ export class School {
     for (let index = 0; index < this.count; index += 1) {
       const fish = this.fish[index];
       this.integrate(fish, desired[index], desiredSpeed[index], dt);
+      this.updateWake(fish, dt);
     }
     this.tinyFish.update(dt, time);
     this.lotus.update(dt, time, this.ripples);
@@ -243,6 +244,26 @@ export class School {
     fish.depth +=
       (fish.targetDepth - fish.depth) *
       (1 - Math.exp(-fish.depthTransitionRate * dt));
+  }
+
+  /**
+   * A koi swimming just under the surface parts the water: rings trail off
+   * behind it like a duck's wake, stronger the shallower and faster it goes.
+   */
+  private updateWake(fish: Koi, dt: number): void {
+    const wake = FISH.wake;
+    const shallowness = 1 - fish.depth / Math.max(wake.depth, 0.001);
+    if (shallowness <= 0 || fish.speed < wake.minimumSpeed) {
+      fish.wakeCountdown = Math.min(fish.wakeCountdown, wake.interval);
+      return;
+    }
+    const pace = clamp(fish.speed / Math.max(fish.cruiseSpeed, 0.001), 0.4, 2.5);
+    fish.wakeCountdown -= dt * pace;
+    if (fish.wakeCountdown > 0) return;
+    fish.wakeCountdown = wake.interval;
+    // The water parts over the back, behind the widest part of the body.
+    const back = fish.spine[Math.round((SPINE_NODES - 1) * 0.55)];
+    this.ripples.trigger("wake", back, Math.min(1.6, shallowness * wake.strength * Math.min(pace, 1.6)));
   }
 
   private updateFeeding(fish: Koi, dt: number): void {

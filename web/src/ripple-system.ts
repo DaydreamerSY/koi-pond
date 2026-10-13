@@ -43,7 +43,8 @@ export class RippleSystem {
   private rainIntensity = 0;
   private rainCountdown = 0;
 
-  public trigger(type: RippleType, point: Vec2): void {
+  /** Starts a ripple; `strength` scales how strong it is (1 = the type's own strength). */
+  public trigger(type: RippleType, point: Vec2, strength = 1): void {
     const profile = RIPPLES.types[type];
     const rippleCount = Math.min(
       profile.ripplesPerEvent,
@@ -56,7 +57,7 @@ export class RippleSystem {
       ripple.center = { ...point };
       ripple.age = -index * profile.intervalSeconds;
       ripple.strength =
-        profile.initialStrength * Math.pow(profile.strengthFalloff, index);
+        profile.initialStrength * strength * Math.pow(profile.strengthFalloff, index);
       ripple.type = type;
       ripple.alive = true;
     }

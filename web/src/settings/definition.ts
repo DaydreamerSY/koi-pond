@@ -241,6 +241,17 @@ const koi = group(
         description: "A holding koi still drifts at this share of its cruise speed.",
       }),
     }),
+    // A koi swimming just under the surface parts the water: a trail of rings
+    // behind it, like a duck's wake.
+    wake: group({
+      depth: num({
+        default: 0.16, min: 0, max: 1, step: 0.01,
+        description: "Koi shallower than this leave a wake (0 = at the surface); the shallower, the stronger.",
+      }),
+      interval: num({ default: 0.45, min: 0.05, max: 3, step: 0.01, unit: "s", description: "Time between wake rings at cruising speed." }),
+      minimumSpeed: num({ default: 4, min: 0, max: 60, step: 0.5, unit: "px/s", description: "Slower than this, a koi leaves no wake." }),
+      strength: num({ default: 0.9, min: 0, max: 2, step: 0.05, description: "How strong a koi's wake is next to a duck's (1 = the same)." }),
+    }),
     feeding: group({
       intervalSeconds: range({ default: [1, 4], min: 0, max: 60, step: 0.05 }),
       retryDelaySeconds: range({ default: [0.55, 1.35], min: 0, max: 60, step: 0.05 }),
@@ -509,7 +520,7 @@ const ripples = group(
       }),
       // The trail of rings a paddling duck leaves behind it.
       wake: rippleType({
-        maximumActive: 20, ripplesPerEvent: 1, intervalSeconds: 0.1, initialStrength: 0.42,
+        maximumActive: 36, ripplesPerEvent: 1, intervalSeconds: 0.1, initialStrength: 0.42,
         strengthFalloff: 0.7, lifetime: 1.15, startRadius: 2, expansionSpeed: 12,
         distortion: 6.5, bandSharpness: 0.55, fadeStart: 0.2, strengthDecay: 0.5,
       }),
@@ -1028,10 +1039,25 @@ const duckPalette = group({
 const ducks = group(
   {
     visibleCount: num({ default: 2, min: 0, max: 8, step: 1, int: true, label: "Duck count", effect: "ducks:respawn" }),
-    bodyLength: num({ default: 18, min: 4, max: 40, step: 0.5, unit: "px" }),
+    bodyLength: num({ default: 20, min: 4, max: 40, step: 0.5, unit: "px" }),
     bodyWidthRatio: num({ default: 0.6, min: 0.3, max: 1, step: 0.01 }),
-    ducklingScale: num({ default: 0.56, min: 0.2, max: 1, step: 0.01 }),
-    ducklingSpacing: num({ default: 10.5, min: 2, max: 30, step: 0.5, unit: "px" }),
+    ducklingScale: num({
+      default: 0.42, min: 0.2, max: 1, step: 0.01,
+      description: "A duckling's size next to an adult duck.",
+    }),
+    ducklingSpacing: num({ default: 10, min: 2, max: 30, step: 0.5, unit: "px", description: "Gap between ducklings in a line behind their mother." }),
+    ducklingSpread: range({
+      default: [1, 2.6], min: 0.3, max: 8, step: 0.05,
+      description: "While their mother rests, ducklings potter about this far from her (in adult body lengths), each its own way.",
+    }),
+    ducklingLinger: range({
+      default: [2, 6], min: 0.2, max: 30, step: 0.1,
+      description: "How long (seconds) a duckling potters about one spot before moving to another.",
+    }),
+    ducklingFollowDelay: range({
+      default: [0.3, 1.1], min: 0, max: 5, step: 0.05,
+      description: "Pause (seconds) before ducklings set off after their mother, a little longer down the line.",
+    }),
     cruiseSpeed: range({ default: [5, 8.5], min: 0, max: 60, step: 0.5 }),
     hurrySpeed: num({ default: 15, min: 0, max: 80, step: 0.5, unit: "px/s" }),
     fleeSpeed: num({ default: 27, min: 0, max: 100, step: 0.5, unit: "px/s" }),

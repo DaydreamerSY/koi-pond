@@ -5,16 +5,16 @@ import CoreGraphics
 /// needs no Screen Recording permission) to tell what is at a point.
 @MainActor
 enum DesktopProbe {
-    private static let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
-
     /// True when a click at `point` (screen coordinates, bottom-left origin) lands
     /// on the desktop itself: the icons or the wallpaper, not a window, the Dock,
     /// or the menu bar.
     static func isDesktop(at point: NSPoint) -> Bool {
         let target = CGPoint(x: point.x, y: primaryHeight - point.y)
-        // Windows come front to back; the first one under the point decides.
-        guard let topmost = otherWindows().first(where: { $0.bounds.contains(target) }) else { return true }
-        return topmost.layer <= iconLevel
+        // Everything you can see and click (app windows, panels, the Dock, the
+        // menu bar) sits at layer 0 or above. Below that is the desktop itself,
+        // which on some screens is more than one window (wallpaper, icons,
+        // widgets), so none of those may count as "in the way".
+        return !otherWindows().contains { $0.layer >= 0 && $0.bounds.contains(target) }
     }
 
     /// Screens whose usable area is fully covered by an app window (a zoomed or

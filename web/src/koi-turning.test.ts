@@ -158,6 +158,31 @@ describe("koi swimming and turning", () => {
     expect(cruising).toBeGreaterThan(holding + 0.15);
   });
 
+  it("leaves a wake when swimming just under the surface, but not when deep", () => {
+    const wakesBehind = (depth: number): number => {
+      const school = lone();
+      const fish = school.fish[0];
+      fish.state = SwimState.Glide;
+      fish.stateAge = 0;
+      fish.stateDuration = 999;
+      let time = 0;
+      let count = 0;
+      for (let step = 0; step < 240; step += 1) {
+        fish.depth = depth;
+        fish.targetDepth = depth;
+        fish.depthStateAge = 0;
+        school.update(STEP, (time += STEP));
+        const back = fish.spine[Math.round((SPINE_NODES - 1) * 0.55)];
+        count += school.ripples.instances.filter(
+          (ripple) => ripple.alive && ripple.type === "wake" && ripple.age < STEP * 1.5 && length(sub(ripple.center, back)) < 4,
+        ).length;
+      }
+      return count;
+    };
+    expect(wakesBehind(0.04)).toBeGreaterThan(4);
+    expect(wakesBehind(0.6)).toBe(0);
+  });
+
   it("sways like a fish, not an eel: the front of the body stays nearly still", () => {
     const fish = new School().fish[0];
     fish.tailEffort = 1;

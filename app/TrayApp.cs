@@ -252,8 +252,20 @@ internal sealed class TrayApp : ApplicationContext
         if (source == SoundWallpaper) pond = state;
     }
 
-    private void OnDesktopClick(Point point) =>
-        wallpapers.FirstOrDefault(wallpaper => wallpaper.IsAttached && wallpaper.Bounds.Contains(point))?.CallFishAt(point);
+    /// <summary>Calls the fish on the monitor under the pointer, whichever monitor that is.</summary>
+    private void OnDesktopClick(Point point)
+    {
+        string monitor = Screen.FromPoint(point).DeviceName;
+        WallpaperWindow? wallpaper =
+            wallpapers.FirstOrDefault(candidate => candidate.IsAttached && candidate.Bounds.Contains(point))
+            ?? wallpapers.FirstOrDefault(candidate => candidate.IsAttached && candidate.Screen.DeviceName == monitor);
+        if (wallpaper is null)
+        {
+            Log.Write($"Desktop click at {point} on {monitor} matched no pond: {string.Join(", ", wallpapers.Select(w => $"{w.Screen.DeviceName} {w.Bounds}"))}");
+            return;
+        }
+        wallpaper.CallFishAt(point);
+    }
 
     /// <summary>Pond settings go to every monitor's pond (they also persist, shared through localStorage).</summary>
     private void Broadcast(object message)

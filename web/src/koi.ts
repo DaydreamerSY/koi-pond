@@ -44,6 +44,8 @@ export class Koi {
   public depthStateDuration = 10;
   public inDeepPeriod = false;
   public gulpCountdown = 8;
+  /** Seconds until the next ring of its wake (only near the surface). */
+  public wakeCountdown = 0;
   public gulpAnimation = 0;
   public behaviorRng = 1;
   public state = SwimState.Glide;
@@ -90,6 +92,8 @@ export class Koi {
       FISH.feeding.intervalSeconds[1],
     );
     this.gulpAnimation = 0;
+    // Staggered by the koi's own phase (no extra draw, so the scene stays the same).
+    this.wakeCountdown = (this.phaseOffset / TAU) * FISH.wake.interval;
     this.state = index % 5;
 
     const durations: ReadonlyArray<readonly [number, number]> = [

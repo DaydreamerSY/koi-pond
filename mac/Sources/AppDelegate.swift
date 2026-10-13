@@ -153,9 +153,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     private func desktopClicked(at point: NSPoint) {
-        guard DesktopProbe.isDesktop(at: point),
-              let wallpaper = wallpapers.first(where: { NSMouseInRect(point, $0.window.frame, false) }) else { return }
-        wallpaper.callFish(at: point)
+        guard DesktopProbe.isDesktop(at: point) else { return }
+        // The pond on the screen under the pointer, whichever screen that is.
+        let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
+        let wallpaper = wallpapers.first(where: { NSMouseInRect(point, $0.window.frame, false) })
+            ?? wallpapers.first(where: { $0.displayID == screen?.displayID })
+        wallpaper?.callFish(at: point)
     }
 
     /// Pond settings go to every screen's pond (they also persist in localStorage).

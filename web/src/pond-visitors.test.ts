@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./config";
 import { Crabs } from "./crabs";
-import { DuckFamilies, duckBodyRadius, duckRadius } from "./ducks";
+import { DuckFamilies, duckBodyRadius, duckRadius, duckSize } from "./ducks";
 import { Frogs } from "./frogs";
 import { LotusMotion } from "./lotus-motion";
 import { length, sub, vec } from "./math";
@@ -54,19 +54,73 @@ describe("ducks", () => {
     expect(worstOverlap).toBeLessThan(0.5);
   });
 
-  it("keep ducklings in a line close behind their mother", () => {
+  it("line ducklings up behind a mother who is swimming", () => {
     const { lotus, ripples, step } = pond();
     const families = new DuckFamilies(lotus);
-    run(60, (dt, time) => {
+    const mother = families.ducks[0];
+    const ducklings = families.ducks.filter((duck) => duck.duckling && duck.mother === 0);
+    run(8, (dt, time) => {
+      mother.state = "paddle";
+      mother.stateAge = 0;
+      mother.stateDuration = 99;
       step(dt, time);
       families.update(dt, ripples);
     });
-    const ducklings = families.ducks.filter((duck) => duck.duckling);
-    expect(ducklings.length).toBeGreaterThan(0);
+    expect(ducklings.length).toBeGreaterThan(1);
     for (const duckling of ducklings) {
-      const leader = families.ducks[duckling.leader];
-      expect(length(sub(duckling.position, leader.position))).toBeLessThan(30);
+      expect(duckling.milling).toBe(false);
+      expect(length(sub(duckling.position, families.ducks[duckling.leader].position))).toBeLessThan(22);
     }
+  });
+
+  it("let ducklings potter about a resting mother, each its own way, then follow after a pause", () => {
+    const { lotus, ripples, step } = pond();
+    const families = new DuckFamilies(lotus);
+    const mother = families.ducks[0];
+    const ducklings = families.ducks.filter((duck) => duck.duckling && duck.mother === 0);
+    const hold = (state: "rest" | "paddle"): void => {
+      mother.state = state;
+      mother.stateDuration = 99;
+    };
+    hold("rest");
+    mother.stateAge = 0;
+    let time = run(15, (dt, now) => {
+      hold("rest");
+      step(dt, now);
+      families.update(dt, ripples);
+    });
+    // Scattered around her, not trailing in a line.
+    const angles = ducklings.map((duck) => Math.atan2(duck.position.y - mother.position.y, duck.position.x - mother.position.x));
+    let widest = 0;
+    for (const a of angles) for (const b of angles) widest = Math.max(widest, Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b))));
+    expect(widest).toBeGreaterThan(1);
+    for (const duck of ducklings) {
+      expect(duck.milling).toBe(true);
+      expect(length(sub(duck.position, mother.position))).toBeLessThan(3 * 20 + 6);
+    }
+
+    // She sets off: a short pause, then they follow.
+    mother.stateAge = 0;
+    time = run(0.15, (dt, now) => {
+      hold("paddle");
+      step(dt, now);
+      families.update(dt, ripples);
+    }, time);
+    expect(ducklings.every((duck) => duck.milling)).toBe(true);
+    run(3, (dt, now) => {
+      hold("paddle");
+      step(dt, now);
+      families.update(dt, ripples);
+    }, time);
+    expect(ducklings.some((duck) => duck.milling)).toBe(false);
+  });
+
+  it("make the mother clearly bigger than her ducklings", () => {
+    const { lotus } = pond();
+    const families = new DuckFamilies(lotus);
+    const mother = families.ducks[0];
+    const duckling = families.ducks.find((duck) => duck.duckling)!;
+    expect(duckSize(duckling).length).toBeLessThan(duckSize(mother).length * 0.5);
   });
 
   it("paddle over to a click nearby, then dabble there", () => {

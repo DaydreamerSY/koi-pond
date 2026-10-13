@@ -38,6 +38,16 @@ export interface Duck {
   flap: number;
   phase: number;
   dipRippled: boolean;
+  /** Duckling pottering about its resting mother (rather than in line behind her). */
+  milling: boolean;
+  /** Where a milling duckling heads, relative to its mother. */
+  spot: Vec2;
+  /** Seconds until a milling duckling moves to a new spot. */
+  spotTimer: number;
+  /** Seconds left before a duckling sets off after its mother (−1: not waiting). */
+  followDelay: number;
+  /** A milling duckling's own dabble, seconds in (−1: not dabbling). */
+  dipTime: number;
 }
 
 const DIP_SECONDS = 0.8;
@@ -195,6 +205,11 @@ export class DuckFamilies {
       flap: 0,
       phase: this.random.range(0, Math.PI * 2),
       dipRippled: false,
+      milling: false,
+      spot: { x: 0, y: 0 },
+      spotTimer: 0,
+      followDelay: -1,
+      dipTime: -1,
     };
     if (!duckling) this.beginPaddle(duck);
     this.ducks.push(duck);
@@ -304,10 +319,47 @@ export class DuckFamilies {
 
   // ---- ducklings ---------------------------------------------------------------
 
+  /**
+   * Ducklings line up behind a swimming mother; while she rests, preens, or
+   * dabbles they potter about around her, each its own way, and when she sets
+   * off again they follow after a short pause.
+   */
   private follow(duck: Duck, dt: number): void {
-    const leader = this.ducks[duck.leader];
     const mother = this.ducks[duck.mother];
-    if (!leader || !mother) return;
+    if (!mother) return;
+    const motherSwimming = mother.state === "paddle" || mother.state === "approach" || mother.state === "flee";
+    if (!motherSwimming) {
+      if (!duck.milling) {
+        duck.milling = true;
+        duck.stateAge = 0;
+        this.pickSpot(duck, mother);
+      }
+      duck.followDelay = -1;
+      this.mill(duck, mother, dt);
+      return;
+    }
+    if (duck.milling) {
+      if (duck.followDelay < 0) {
+        // A frightened mother is followed at once.
+        duck.followDelay = mother.state === "flee"
+          ? this.random.range(0.05, 0.2)
+          : this.randomRange(DUCKS.ducklingFollowDelay) + (duck.chainIndex - 1) * 0.15;
+      }
+      duck.followDelay -= dt;
+      if (duck.followDelay > 0) {
+        this.mill(duck, mother, dt);
+        return;
+      }
+      duck.milling = false;
+      duck.followDelay = -1;
+      duck.dipTime = -1;
+    }
+    this.followLine(duck, mother, dt);
+  }
+
+  private followLine(duck: Duck, mother: Duck, dt: number): void {
+    const leader = this.ducks[duck.leader];
+    if (!leader) return;
     const spacing = DUCKS.ducklingSpacing * (leader.duckling ? 1 : 1.3);
     const anchor = sub(leader.position, mul(fromAngle(leader.heading), spacing));
     const toAnchor = sub(anchor, duck.position);
@@ -321,6 +373,51 @@ export class DuckFamilies {
     duck.headDip += (dip - duck.headDip) * Math.min(1, ease * 2);
     duck.headTurn += (turn - duck.headTurn) * ease;
     this.turnAndAccelerate(duck, goal, targetSpeed, DUCKS.turnRate * 2.6, dt);
+  }
+
+  /** Pottering about a resting mother: paddle to a spot, linger, look about, dabble. */
+  private mill(duck: Duck, mother: Duck, dt: number): void {
+    duck.stateAge += dt;
+    duck.spotTimer -= dt;
+    if (duck.spotTimer <= 0) this.pickSpot(duck, mother);
+
+    const goal = add(mother.position, duck.spot);
+    const distance = length(sub(goal, duck.position));
+    if (distance > 2.5) {
+      this.turnAndAccelerate(duck, goal, clamp(distance * 0.6, 1.5, duck.cruiseSpeed * 0.7), DUCKS.turnRate * 2, dt);
+    } else {
+      // Lingering: drift to a stop, turning this way and that.
+      this.turnAndAccelerate(duck, null, 0, DUCKS.turnRate, dt);
+      duck.heading = wrapAngle(duck.heading + Math.sin(duck.stateAge * 0.9 + duck.phase * 3) * 0.7 * dt);
+    }
+
+    // Its own little dabbles now and then, and glances about.
+    if (duck.dipTime < 0 && this.random.unit() < 0.12 * dt) duck.dipTime = 0;
+    let dip = 0;
+    if (duck.dipTime >= 0) {
+      duck.dipTime += dt;
+      dip = dipCurve(duck.dipTime) * 0.8;
+      if (duck.dipTime > DIP_CYCLE) duck.dipTime = -1;
+    }
+    const turn = Math.sin(duck.stateAge * 1.7 + duck.phase) * 0.35;
+    const ease = 1 - Math.exp(-dt * 6);
+    duck.headDip += (dip - duck.headDip) * Math.min(1, ease * 2);
+    duck.headTurn += (turn - duck.headTurn) * ease;
+  }
+
+  /** A random spot around the mother, in open water and inside the pond. */
+  private pickSpot(duck: Duck, mother: Duck): void {
+    const radius = duckRadius(duck);
+    const margin = Math.max(DUCKS.edgeMargin, 4);
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const offset = mul(fromAngle(this.random.range(0, Math.PI * 2)), this.randomRange(DUCKS.ducklingSpread) * DUCKS.bodyLength);
+      const point = add(mother.position, offset);
+      const inPond = point.x > margin && point.x < CANVAS_WIDTH - margin && point.y > margin && point.y < CANVAS_HEIGHT - margin;
+      const clear = this.leaves.every((leaf) => length(sub(point, leaf)) > leaf.radius + radius * 1.5);
+      duck.spot = offset;
+      if (inPond && clear) break;
+    }
+    duck.spotTimer = this.randomRange(DUCKS.ducklingLinger);
   }
 
   // ---- shared movement ------------------------------------------------------------
