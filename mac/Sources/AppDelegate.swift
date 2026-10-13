@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var frameRateItems: [NSMenuItem] = []
     private var pondItems: [NSMenuItem] = []
     private var koiMenuItem: NSMenuItem!
+    private var randomWeatherItem: NSMenuItem!
     private var rainItem: NSMenuItem!
     private var soundItem: NSMenuItem!
     private var pauseItem: NSMenuItem!
@@ -180,6 +181,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             weather.submenu?.addItem(item)
             weatherItems.append(item)
         }
+        // Picks a different preset every few minutes; choosing one above turns it off.
+        weather.submenu?.addItem(.separator())
+        randomWeatherItem = ActionItem("Ngẫu nhiên") { [weak self] in
+            guard let self else { return }
+            broadcast(["type": "randomWeather", "value": !(pond?.randomWeather ?? false)])
+        }
+        weather.submenu?.addItem(randomWeatherItem)
         menu.addItem(weather)
 
         rainItem = ActionItem("Mưa rơi trên mặt nước") { [weak self] in
@@ -273,6 +281,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             item.state = (pond?.visitors[(item.representedObject as? String) ?? ""] ?? 0) > 0 ? .on : .off
         }
         koiMenuItem.title = pond.map { "Số cá koi (\($0.koi))" } ?? "Số cá koi"
+        randomWeatherItem.state = pond?.randomWeather == true ? .on : .off
         rainItem.state = pond?.rain == true ? .on : .off
         soundItem.state = preferences.sound ? .on : .off
         pauseItem.state = preferences.paused ? .on : .off

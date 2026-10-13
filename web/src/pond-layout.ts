@@ -1,31 +1,13 @@
-// Where things are on the pond surface at a given time, for creatures that
-// need to steer around (ducks) or sit on (frogs) the lotus leaves.
+// Shared bits for the pond visitors.
 
 import * as THREE from "three";
-import { FISH, LOTUS, LOTUS_LEAVES, viewportPoint } from "./config";
+import { FISH } from "./config";
 
+/** A lotus leaf as a circle on the surface (see LotusMotion for where they are). */
 export interface LeafCircle {
   x: number;
   y: number;
   radius: number;
-}
-
-/**
- * Visible lotus leaves as circles. Mirrors the drift in LotusLeavesPass.update
- * (the simulation and renderer share one clock), reusing `out`'s objects.
- */
-export function lotusLeafCircles(time: number, out: LeafCircle[]): LeafCircle[] {
-  const count = Math.min(LOTUS.visibleLeafCount, LOTUS_LEAVES.length);
-  for (let index = 0; index < count; index += 1) {
-    const leaf = LOTUS_LEAVES[index];
-    const placement = viewportPoint(leaf.x, leaf.y);
-    const circle = out[index] ?? (out[index] = { x: 0, y: 0, radius: 0 });
-    circle.x = placement.x + Math.sin(time * 0.12 + leaf.phase) * LOTUS.driftX;
-    circle.y = placement.y + Math.cos(time * 0.15 + leaf.phase * 1.3) * LOTUS.driftY;
-    circle.radius = leaf.radius * LOTUS.radiusScale;
-  }
-  out.length = count;
-  return out;
 }
 
 /**

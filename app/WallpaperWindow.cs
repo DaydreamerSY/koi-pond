@@ -176,4 +176,4 @@ internal sealed class WallpaperWindow : NativeWindow, IDisposable
 }
 
 /// <summary>What the pond reports back (see web/src/wallpaper.ts).</summary>
-internal sealed record PondState(string Type, string Weather, bool Rain, int Koi, string Fps, Dictionary<string, int>? Visitors);
+internal sealed record PondState(string Type, string Weather, bool Rain, int Koi, string Fps, bool RandomWeather, Dictionary<string, int>? Visitors);

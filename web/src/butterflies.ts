@@ -9,6 +9,7 @@ import {
   LOTUS_LEAVES,
   viewportPoint,
 } from "./config";
+import type { LotusMotion } from "./lotus-motion";
 import {
   SurfaceGeometryBatch,
   type SurfacePoint,
@@ -102,6 +103,7 @@ export class ButterflyPass {
   });
   private butterflies: Butterfly[] = [];
   private lastTime = -1;
+  private lotus: LotusMotion | null = null;
 
   public constructor() {
     this.butterflies = this.createButterflies();
@@ -208,7 +210,8 @@ export class ButterflyPass {
     });
   }
 
-  public update(time: number): void {
+  public update(time: number, lotus: LotusMotion): void {
+    this.lotus = lotus;
     const deltaTime =
       this.lastTime < 0 ? 0 : Math.min(0.05, Math.max(0, time - this.lastTime));
     this.lastTime = time;
@@ -480,6 +483,9 @@ export class ButterflyPass {
     );
     const flower = flowers[Math.min(flowerIndex, flowers.length - 1)];
     if (!flower) return { x: CANVAS_WIDTH * 0.5, y: CANVAS_HEIGHT * 0.5 };
+    // Follow the flower as its leaf floats.
+    const place = this.lotus?.flowerAt(flower);
+    if (place) return { x: place.x, y: place.y };
     const leaf = LOTUS_LEAVES[flower.leafIndex];
     const placement = viewportPoint(leaf.x, leaf.y);
     return {

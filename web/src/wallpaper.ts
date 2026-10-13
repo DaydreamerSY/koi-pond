@@ -24,6 +24,7 @@ export type HostMessage =
   | { type: "koi"; value: number }
   | { type: "fps"; value: FrameRateCap }
   | { type: "visitor"; kind: VisitorKind; value: boolean }
+  | { type: "randomWeather"; value: boolean }
   /** Re-read saved settings (a host whose web views don't share storage events). */
   | { type: "resync" };
 
@@ -34,6 +35,8 @@ export interface PondState {
   rain: boolean;
   koi: number;
   fps: FrameRateCap;
+  /** Whether the weather is picked at random every few minutes. */
+  randomWeather: boolean;
   /** How many of each visitor are in the pond. */
   visitors: Record<VisitorKind, number>;
 }

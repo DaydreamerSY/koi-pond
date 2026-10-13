@@ -145,6 +145,32 @@ const koi = group(
         waveSpeed: num({ default: 2.4, min: -10, max: 10, step: 0.05 }),
       }),
     }),
+    // A koi turns by curling into a C. The body never folds back on itself:
+    // the head can only bend so far from the tail, and a longer koi is stiffer,
+    // so its tightest turn is wider.
+    turning: group({
+      maxBodyBend: num({
+        default: 2.1, min: 0.3, max: 2.9, step: 0.01, unit: "rad",
+        description: "How far a koi of the reference length can curl into a C, head to tail (2.1 rad ≈ 120°).",
+      }),
+      referenceLength: num({ default: 30, min: 5, max: 80, step: 0.5, unit: "px" }),
+      lengthStiffness: num({
+        default: 0.4, min: 0, max: 2, step: 0.05,
+        description: "Longer koi bend less: the C limit scales by (reference length ÷ body length) to this power.",
+      }),
+      jointFlex: num({
+        default: 1.25, min: 1, max: 4, step: 0.05,
+        description: "How much of the bend may gather in one part of the body (1 = an even arc).",
+      }),
+      smoothing: num({
+        default: 0.5, min: 0, max: 1, step: 0.01,
+        description: "How strongly the curve evens out along the body each step (a smooth C instead of a hook).",
+      }),
+      inPlaceRotation: num({
+        default: 0.6, min: 0, max: 1, step: 0.01,
+        description: "When swimming slowly, how much of a turn swings the whole body around its middle instead of bending it.",
+      }),
+    }),
     feeding: group({
       intervalSeconds: range({ default: [1, 4], min: 0, max: 60, step: 0.05 }),
       retryDelaySeconds: range({ default: [0.55, 1.35], min: 0, max: 60, step: 0.05 }),
@@ -504,6 +530,44 @@ const lotus = group(
     driftX: num({ default: 0.7, min: 0, max: 20, step: 0.01 }),
     driftY: num({ default: 0.55, min: 0, max: 20, step: 0.01 }),
     rotationAmount: num({ default: 0.055, min: 0, max: 2, step: 0.001 }),
+    // Floating: read live every step (see lotus-motion.ts), so no rebuild.
+    float: group(
+      {
+        wander: num({
+          default: 1.6, min: 0, max: 10, step: 0.1, unit: "px",
+          description: "Slow wandering on the current, on top of the drift above.",
+        }),
+        swell: num({
+          default: 0.03, min: 0, max: 0.2, step: 0.001,
+          description: "How much each leaf rises and sinks on the gentle swell (a share of its size).",
+        }),
+        swellSpeed: num({ default: 0.55, min: 0, max: 5, step: 0.01, unit: "rad/s" }),
+        shadowLift: num({
+          default: 5, min: 0, max: 20, step: 0.1,
+          description: "How much farther the shadow falls while a leaf rides high.",
+        }),
+        ripplePush: num({
+          default: 34, min: 0, max: 200, step: 1, unit: "px/s²",
+          description: "How hard a passing ripple ring pushes a leaf outward.",
+        }),
+        rippleLift: num({ default: 1.6, min: 0, max: 10, step: 0.05, description: "How much a passing ripple lifts a leaf." }),
+        rippleTwist: num({ default: 0.9, min: 0, max: 10, step: 0.05, description: "How much a passing ripple twists a leaf." }),
+        frogBump: num({ default: 0.2, min: 0, max: 3, step: 0.01, description: "How far a leaf dips when a frog lands on or leaps off it." }),
+        spring: num({
+          default: 2.6, min: 0.1, max: 30, step: 0.1,
+          description: "How firmly a nudged leaf drifts back (it bobs faster than it drifts).",
+        }),
+        damping: num({ default: 1.3, min: 0, max: 20, step: 0.05, description: "How quickly the bobbing settles." }),
+        maxOffset: num({ default: 5, min: 0, max: 30, step: 0.5, unit: "px" }),
+        rippleWeights: group({
+          touch: num({ default: 1, min: 0, max: 3, step: 0.05 }),
+          rain: num({ default: 0.3, min: 0, max: 3, step: 0.05 }),
+          mouth: num({ default: 0.45, min: 0, max: 3, step: 0.05 }),
+          wake: num({ default: 0.8, min: 0, max: 3, step: 0.05 }),
+        }),
+      },
+      { effect: "lotus:live" },
+    ),
     shadow: group(
       {
         color: color({ default: 0x0a2b26 }),
@@ -847,6 +911,21 @@ const butterflySpawns = collection(butterflySpawnItem, [
   },
 });
 
+// ---- atmosphere -----------------------------------------------------------
+
+const atmosphere = group(
+  {
+    randomWeather: bool({
+      default: false,
+      label: "Random weather",
+      description: "Switch to a random weather preset every few minutes. Picking a weather yourself turns this off.",
+    }),
+    randomMinutes: num({ default: 10, min: 1, max: 120, step: 1, int: true, unit: "min", label: "Change every" }),
+    randomRain: bool({ default: true, label: "Include rain", description: "Let the random weather pick Rain too." }),
+  },
+  { label: "Atmosphere", effect: "atmosphere:live" },
+);
+
 // ---- pond visitors: ducks, crabs, shrimp, frogs ------------------------
 // Behavior and look are read live every frame; only the fields that change
 // how many there are (or their spawn-time size) respawn them.
@@ -1046,6 +1125,7 @@ export const definition = group({
   "pond-bed": pondBed,
   water,
   ripples,
+  atmosphere,
   lotus,
   "lotus-leaves": lotusLeaves,
   "lotus-flowers": lotusFlowers,
@@ -1086,7 +1166,7 @@ export interface SettingsGroup {
 export const SETTINGS_GROUPS: readonly SettingsGroup[] = [
   { id: "koi", title: "Koi", description: "Fish behavior, palettes, and body markings.", sectionIds: ["koi", "koi-palettes", "koi-patterns"] },
   { id: "tiny-fish", title: "Tiny fish", description: "School behavior, appearance, and placement.", sectionIds: ["tiny-fish", "tiny-fish-schools"] },
-  { id: "water", title: "Water", description: "Pond bed, currents, tint, and ripple behavior.", sectionIds: ["pond-bed", "water", "ripples"] },
+  { id: "water", title: "Water", description: "Pond bed, currents, tint, and ripple behavior.", sectionIds: ["pond-bed", "water", "ripples", "atmosphere"] },
   { id: "lotus", title: "Lotus", description: "Leaves, flowers, palettes, and placement.", sectionIds: ["lotus", "lotus-leaves", "lotus-flowers"] },
   { id: "duckweed", title: "Duckweed", description: "Leaf appearance and floating patches.", sectionIds: ["duckweed", "duckweed-patches"] },
   { id: "butterflies", title: "Butterflies", description: "Flight behavior, colors, and spawn points.", sectionIds: ["butterflies", "butterfly-spawns"] },
@@ -1102,6 +1182,7 @@ export const SECTION_TITLES: Record<SectionId, string> = {
   "pond-bed": "Pond bed",
   water: "Water",
   ripples: "Ripples",
+  atmosphere: "Atmosphere",
   lotus: "Lotus",
   "lotus-leaves": "Lotus placements",
   "lotus-flowers": "Lotus flowers",
@@ -1125,6 +1206,7 @@ export const SECTION_DESCRIPTIONS: Record<SectionId, string> = {
   "pond-bed": "Base water-bed colors, grain, and edge depth.",
   water: "Current layers, distortion, and tint.",
   ripples: "Touch, rain, koi-mouth, and duck-wake ripples plus rainfall frequency.",
+  atmosphere: "Random weather that changes every few minutes.",
   lotus: "Leaf and flower geometry, drift, shadows, and palettes.",
   "lotus-leaves": "Position, scale, rotation, and palette for every leaf.",
   "lotus-flowers": "Leaf attachment, position, size, and palette.",

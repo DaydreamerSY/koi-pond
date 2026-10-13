@@ -3,7 +3,8 @@
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, DUCKS, DUCK_SPAWNS, viewportPoint } from "./config";
 import { add, clamp, fromAngle, length, mul, normalize, sub, vec, wrapAngle, type Vec2, XorShift32 } from "./math";
-import { lotusLeafCircles, type LeafCircle } from "./pond-layout";
+import type { LotusMotion } from "./lotus-motion";
+import type { LeafCircle } from "./pond-layout";
 import type { RippleSystem } from "./ripple-system";
 
 export type DuckState = "paddle" | "rest" | "dabble" | "preen" | "approach" | "flee";
@@ -53,13 +54,23 @@ export function duckRadius(duck: Duck): number {
   return DUCKS.bodyLength * 0.5 * (duck.duckling ? DUCKS.ducklingScale : 1);
 }
 
+/** Body length and width as drawn. Ducklings are round balls of fluff. */
+export function duckSize(duck: Duck): { length: number; width: number } {
+  const length = DUCKS.bodyLength * (duck.duckling ? DUCKS.ducklingScale : 1);
+  return { length, width: length * Math.min(1, DUCKS.bodyWidthRatio * (duck.duckling ? 1.3 : 1)) };
+}
+
+/** How much room a duck's body takes on the water; ducks keep this far apart. */
+export function duckBodyRadius(duck: Duck): number {
+  const { length, width } = duckSize(duck);
+  return (length + width) / 4;
+}
+
 export class DuckFamilies {
   public readonly ducks: Duck[] = [];
 
   private readonly random = new XorShift32(0x0d0c0d0c);
-  private readonly leaves: LeafCircle[] = [];
-
-  public constructor() {
+  public constructor(private readonly lotus: LotusMotion) {
     this.reset();
   }
 
@@ -85,14 +96,24 @@ export class DuckFamilies {
     }
   }
 
-  /** A click on the water: nearby ducks paddle over, hoping it's food. */
+  /**
+   * A click on the water: nearby ducks paddle over, hoping it's food. Each one
+   * gets its own place around the food, on its own side, so they gather in a
+   * ring instead of piling onto one spot.
+   */
   public callTo(point: Vec2): void {
-    for (const duck of this.ducks) {
-      if (duck.duckling) continue;
-      if (length(sub(duck.position, point)) > DUCKS.callRadius) continue;
-      const jitter = mul(fromAngle(this.random.range(0, Math.PI * 2)), this.random.range(2, 7));
+    const hungry = this.ducks
+      .filter((duck) => !duck.duckling && length(sub(duck.position, point)) <= DUCKS.callRadius)
+      .map((duck) => ({ duck, angle: Math.atan2(duck.position.y - point.y, duck.position.x - point.x) }))
+      .sort((a, b) => a.angle - b.angle);
+    if (hungry.length === 0) return;
+    const radius = Math.max(...hungry.map(({ duck }) => duckBodyRadius(duck)));
+    const ring = radius * Math.max(1.1, hungry.length * 0.42);
+    const spread = (Math.PI * 2) / hungry.length;
+    const start = hungry.length === 1 ? hungry[0].angle : hungry[0].angle + this.random.range(-0.3, 0.3);
+    for (const [index, { duck }] of hungry.entries()) {
       this.begin(duck, "approach", 14);
-      duck.target = add(point, jitter);
+      duck.target = add(point, mul(fromAngle(start + index * spread), ring));
     }
   }
 
@@ -108,14 +129,15 @@ export class DuckFamilies {
     }
   }
 
-  public update(dt: number, time: number, ripples: RippleSystem): void {
-    lotusLeafCircles(time, this.leaves);
+  public update(dt: number, ripples: RippleSystem): void {
     for (const duck of this.ducks) {
       if (duck.duckling) this.follow(duck, dt);
       else this.steer(duck, dt, ripples);
-      this.integrate(duck, dt);
+      this.move(duck, dt);
       if (!duck.duckling) this.paddleWake(duck, dt, ripples);
     }
+    this.keepApart();
+    for (const duck of this.ducks) this.keepClear(duck);
   }
 
   // ---- spawning --------------------------------------------------------------
@@ -346,9 +368,39 @@ export class DuckFamilies {
     return push;
   }
 
-  private integrate(duck: Duck, dt: number): void {
+  private move(duck: Duck, dt: number): void {
     duck.position = add(duck.position, mul(fromAngle(duck.heading), duck.speed * dt));
-    // Never sit on a leaf, even if one drifts into the duck.
+    duck.paddlePhase += dt * (1.8 + duck.speed * 0.85);
+    duck.flap = Math.max(0, duck.flap - dt * 0.75);
+  }
+
+  /**
+   * Ducks bump; they don't overlap. Any two bodies that overlap are pushed
+   * apart, the smaller one giving way more (a duckling yields to an adult).
+   */
+  private keepApart(): void {
+    for (let pass = 0; pass < 3; pass += 1) {
+      for (let a = 0; a < this.ducks.length; a += 1) {
+        for (let b = a + 1; b < this.ducks.length; b += 1) {
+          const first = this.ducks[a];
+          const second = this.ducks[b];
+          const firstRadius = duckBodyRadius(first);
+          const secondRadius = duckBodyRadius(second);
+          const apart = sub(second.position, first.position);
+          const distance = length(apart);
+          const overlap = firstRadius + secondRadius - distance;
+          if (overlap <= 0) continue;
+          const direction = distance > 0.001 ? mul(apart, 1 / distance) : fromAngle(first.heading + Math.PI / 2);
+          const firstShare = (secondRadius * secondRadius) / (firstRadius * firstRadius + secondRadius * secondRadius);
+          first.position = sub(first.position, mul(direction, overlap * firstShare));
+          second.position = add(second.position, mul(direction, overlap * (1 - firstShare)));
+        }
+      }
+    }
+  }
+
+  /** Never on a leaf (even one that drifts into the duck), never out of the pond. */
+  private keepClear(duck: Duck): void {
     const radius = duckRadius(duck);
     for (const leaf of this.leaves) {
       const away = sub(duck.position, leaf);
@@ -357,8 +409,6 @@ export class DuckFamilies {
       if (distance < minimum && distance > 0.001) duck.position = add(leaf, mul(away, minimum / distance));
     }
     duck.position = this.clampToPond(duck.position, 4);
-    duck.paddlePhase += dt * (1.8 + duck.speed * 0.85);
-    duck.flap = Math.max(0, duck.flap - dt * 0.75);
   }
 
   private paddleWake(duck: Duck, dt: number, ripples: RippleSystem): void {
@@ -367,6 +417,11 @@ export class DuckFamilies {
     if (duck.wakeCountdown > 0) return;
     duck.wakeCountdown = DUCKS.wakeInterval;
     ripples.trigger("wake", sub(duck.position, mul(fromAngle(duck.heading), duckRadius(duck) * 1.1)));
+  }
+
+  /** The leaves as they float right now. */
+  private get leaves(): readonly LeafCircle[] {
+    return this.lotus.leaves;
   }
 
   private clampToPond(point: Vec2, margin = Math.max(DUCKS.edgeMargin, 4)): Vec2 {

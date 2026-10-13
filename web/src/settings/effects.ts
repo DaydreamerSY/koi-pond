@@ -74,6 +74,10 @@ const HANDLERS: Record<string, EffectHandler> = {
   "pond-bed": { run: (runtime) => runtime.renderer.refreshSection("pond-bed") },
   water: { run: (runtime) => runtime.renderer.refreshSection("water") },
   "lotus:rebuild": { run: (runtime) => runtime.renderer.refreshSection("lotus") },
+  // Floating settings are read live every step; the tag only overrides "lotus:rebuild".
+  "lotus:live": { run: () => {} },
+  // The random-weather cycle (app.tsx) reads these through React.
+  "atmosphere:live": { run: () => {} },
   "duckweed:rebuild": { heavy: true, run: (runtime) => runtime.renderer.refreshSection("duckweed") },
   // Ripple-response settings are read live every frame; the tag only exists to
   // override the parent group's heavy "duckweed:rebuild".

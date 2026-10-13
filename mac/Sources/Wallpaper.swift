@@ -7,6 +7,7 @@ struct PondState {
     var rain: Bool
     var koi: Int
     var fps: String
+    var randomWeather: Bool
     var visitors: [String: Int]
 
     init?(_ message: [String: Any]) {
@@ -15,6 +16,7 @@ struct PondState {
         rain = (message["rain"] as? NSNumber)?.boolValue ?? false
         koi = (message["koi"] as? NSNumber)?.intValue ?? 0
         fps = message["fps"] as? String ?? ""
+        randomWeather = (message["randomWeather"] as? NSNumber)?.boolValue ?? false
         visitors = (message["visitors"] as? [String: Any] ?? [:]).compactMapValues { ($0 as? NSNumber)?.intValue }
     }
 }

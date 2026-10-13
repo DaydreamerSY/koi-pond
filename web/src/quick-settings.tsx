@@ -121,6 +121,9 @@ export function QuickSettings({
   const [visiblePatchCount, setVisiblePatchCount] = useSetting<number>(["duckweed", "visiblePatchCount"]);
   const [visibleButterflyCount, setVisibleButterflyCount] = useSetting<number>(["butterflies", "visibleCount"]);
 
+  const [randomWeather, setRandomWeather] = useSetting<boolean>(["atmosphere", "randomWeather"]);
+  const [randomMinutes] = useSetting<number>(["atmosphere", "randomMinutes"]);
+
   const [duckCount, setDuckCount] = useSetting<number>(["ducks", "visibleCount"]);
   const [crabCount, setCrabCount] = useSetting<number>(["crabs", "visibleCount"]);
   const [shrimpCount, setShrimpCount] = useSetting<number>(["shrimp", "visibleCount"]);
@@ -310,6 +313,13 @@ export function QuickSettings({
             <small>Show raindrops spreading across the surface.</small>
           </div>
           <Switch id="quick-rain" checked={rainEnabled} onCheckedChange={onRainChange} />
+        </div>
+        <div className="quick-setting quick-setting--switch" data-base-ui-swipe-ignore>
+          <div className="quick-setting__copy">
+            <Label htmlFor="quick-random-weather">Random weather</Label>
+            <small>{`A different weather every ${randomMinutes} min. Picking one above turns this off.`}</small>
+          </div>
+          <Switch id="quick-random-weather" checked={randomWeather} onCheckedChange={(checked) => setRandomWeather(checked)} />
         </div>
         <div className="quick-setting quick-setting--switch" data-base-ui-swipe-ignore>
           <div className="quick-setting__copy">

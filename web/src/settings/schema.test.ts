@@ -42,7 +42,7 @@ describe("schema defaults", () => {
     expect(Object.keys(value).sort()).toEqual(
       [
         "koi", "koi-palettes", "koi-patterns", "tiny-fish", "tiny-fish-schools",
-        "pond-bed", "water", "ripples", "lotus", "lotus-leaves", "lotus-flowers",
+        "pond-bed", "water", "ripples", "atmosphere", "lotus", "lotus-leaves", "lotus-flowers",
         "duckweed", "duckweed-patches", "butterflies", "butterfly-spawns",
         "ducks", "duck-spawns", "crabs", "shrimp", "frogs",
       ].sort(),

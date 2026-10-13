@@ -3,7 +3,8 @@
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, FROGS } from "./config";
 import { add, clamp, fromAngle, length, lerp, mul, normalize, sub, wrapAngle, type Vec2, XorShift32 } from "./math";
-import { lotusLeafCircles, type LeafCircle } from "./pond-layout";
+import type { LotusMotion } from "./lotus-motion";
+import type { LeafCircle } from "./pond-layout";
 import type { RippleSystem } from "./ripple-system";
 
 export type FrogState = "sit" | "hop" | "swim";
@@ -26,6 +27,8 @@ export interface Frog {
   /** Throat sac while croaking (0..1). */
   croak: number;
   croakTime: number;
+  /** How high its leaf is riding (the frog rides with it). */
+  lift: number;
   kickPhase: number;
   wakeCountdown: number;
   palette: number;
@@ -36,10 +39,7 @@ export class Frogs {
   public readonly frogs: Frog[] = [];
 
   private readonly random = new XorShift32(0xf2066f20);
-  private readonly leaves: LeafCircle[] = [];
-  private time = 0;
-
-  public constructor() {
+  public constructor(private readonly lotus: LotusMotion) {
     this.reset();
   }
 
@@ -50,7 +50,6 @@ export class Frogs {
   }
 
   public respawn(): void {
-    lotusLeafCircles(this.time, this.leaves);
     this.frogs.length = Math.min(this.frogs.length, FROGS.visibleCount);
     while (this.frogs.length < FROGS.visibleCount) this.frogs.push(this.create(this.frogs.length));
   }
@@ -82,9 +81,7 @@ export class Frogs {
     }
   }
 
-  public update(dt: number, time: number, ripples: RippleSystem): void {
-    this.time = time;
-    lotusLeafCircles(time, this.leaves);
+  public update(dt: number, ripples: RippleSystem): void {
     for (const frog of this.frogs) {
       frog.stateAge += dt;
       if (frog.leaf >= this.leaves.length) frog.leaf = -1;
@@ -108,6 +105,7 @@ export class Frogs {
     const leaf = this.leaves[frog.leaf];
     if (leaf) frog.position = add(leaf, frog.seat);
     frog.height = 0;
+    frog.lift = this.lotus.leaves[frog.leaf]?.lift ?? 0;
 
     // A croak: the throat sac puffs three times.
     if (frog.croakTime > 0) {
@@ -138,6 +136,8 @@ export class Frogs {
 
     frog.height = 0;
     if (leaf) {
+      // The leaf dips under the frog's weight, then bobs back.
+      this.lotus.bump(frog.leaf);
       this.begin(frog, "sit", this.randomRange(FROGS.sitDuration));
     } else {
       // Plop.
@@ -197,6 +197,7 @@ export class Frogs {
       height: 0,
       croak: 0,
       croakTime: 0,
+      lift: 0,
       kickPhase: 0,
       wakeCountdown: 0,
       palette: index,
@@ -254,6 +255,7 @@ export class Frogs {
 
   private leapTo(frog: Frog, leafIndex: number): void {
     const leaf = this.leaves[leafIndex];
+    this.pushOff(frog);
     frog.hopFrom = { ...frog.position };
     frog.leaf = leafIndex;
     frog.seat = this.seatOn(leaf, sub(frog.position, leaf));
@@ -265,6 +267,7 @@ export class Frogs {
 
   private leapIntoWater(frog: Frog, direction: Vec2): void {
     const from = this.leaves[frog.leaf];
+    this.pushOff(frog);
     frog.hopFrom = { ...frog.position };
     frog.leaf = -1;
     // Land clear of the leaf it leaves (and of any other leaf, if possible).
@@ -280,6 +283,17 @@ export class Frogs {
     frog.croakTime = 0;
     frog.croak = 0;
     this.begin(frog, "hop", FROGS.hopSeconds);
+  }
+
+  /** Leaping off a leaf kicks it down a little. */
+  private pushOff(frog: Frog): void {
+    frog.lift = 0;
+    if (frog.state === "sit" && frog.leaf >= 0) this.lotus.bump(frog.leaf);
+  }
+
+  /** The leaves as they float right now. */
+  private get leaves(): readonly LeafCircle[] {
+    return this.lotus.leaves;
   }
 
   private onAnyLeaf(point: Vec2): boolean {

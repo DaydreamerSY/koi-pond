@@ -3,8 +3,8 @@ import {
   LOTUS,
   LOTUS_FLOWERS,
   LOTUS_LEAVES,
-  viewportPoint,
 } from "./config";
+import type { LotusMotion } from "./lotus-motion";
 
 interface Point {
   x: number;
@@ -175,7 +175,6 @@ export class LotusLeavesPass {
   private leaves: LotusLeafMesh[] = [];
   private flowers: LotusFlowerMesh[] = [];
   // Per-frame scratch: animated center of each built leaf.
-  private leafCenters: Point[] = [];
 
   public constructor() {
     this.refreshConfig();
@@ -205,7 +204,8 @@ export class LotusLeavesPass {
     this.rebuild();
   }
 
-  public update(time: number): void {
+  /** Draws the leaves where they float right now (see LotusMotion). */
+  public update(time: number, motion: LotusMotion): void {
     if (
       LOTUS_LEAVES.length !== this.leaves.length ||
       LOTUS_FLOWERS.length !== this.flowers.length
@@ -213,61 +213,40 @@ export class LotusLeavesPass {
       this.rebuild();
     }
 
-    const visibleLeafCount = LOTUS.visibleLeafCount;
     const visibleFlowerCount = LOTUS.visibleFlowerCount;
     const shadowOffset = LOTUS.shadow.offset;
 
     for (const [leafIndex, mesh] of this.leaves.entries()) {
-      const visible = leafIndex < visibleLeafCount;
-      mesh.group.visible = visible;
-      mesh.shadowMesh.visible = visible;
-      if (!visible) continue;
+      const pose = motion.leaves[leafIndex];
+      mesh.group.visible = pose !== undefined;
+      mesh.shadowMesh.visible = pose !== undefined;
+      if (!pose) continue;
 
-      const leaf = LOTUS_LEAVES[leafIndex];
-      const placement = viewportPoint(leaf.x, leaf.y);
-      const centerX =
-        placement.x + Math.sin(time * 0.12 + leaf.phase) * LOTUS.driftX;
-      const centerY =
-        placement.y +
-        Math.cos(time * 0.15 + leaf.phase * 1.3) * LOTUS.driftY;
-      const sway =
-        Math.sin(time * 0.085 + leaf.phase) * LOTUS.rotationAmount;
-      const pulse = 1 + Math.sin(time * 0.11 + leaf.phase) * 0.012;
-
-      const center = this.leafCenters[leafIndex];
-      center.x = centerX;
-      center.y = centerY;
-
-      mesh.group.position.set(centerX, centerY, 0);
-      mesh.group.rotation.z = sway;
-      mesh.group.scale.setScalar(pulse);
+      // Riding higher, a leaf looks a touch bigger and throws its shadow farther.
+      const scale = 1 + pose.lift;
+      const shadowReach = 1 + pose.lift * LOTUS.float.shadowLift;
+      mesh.group.position.set(pose.x, pose.y, 0);
+      mesh.group.rotation.z = pose.rotation;
+      mesh.group.scale.setScalar(scale);
       mesh.shadowMesh.position.set(
-        centerX + shadowOffset.x,
-        centerY + shadowOffset.y,
+        pose.x + shadowOffset.x * shadowReach,
+        pose.y + shadowOffset.y * shadowReach,
         0,
       );
-      mesh.shadowMesh.rotation.z = sway;
-      mesh.shadowMesh.scale.setScalar(pulse * 1.02);
+      mesh.shadowMesh.rotation.z = pose.rotation;
+      mesh.shadowMesh.scale.setScalar(scale * 1.02);
     }
 
     for (const [flowerIndex, mesh] of this.flowers.entries()) {
       const flower = LOTUS_FLOWERS[flowerIndex];
       const leaf = LOTUS_LEAVES[flower.leafIndex];
-      const visible =
-        flowerIndex < visibleFlowerCount &&
-        flower.leafIndex < visibleLeafCount &&
-        leaf !== undefined &&
-        this.leafCenters[flower.leafIndex] !== undefined;
-      mesh.mesh.visible = visible;
-      if (!visible) continue;
+      const place = flowerIndex < visibleFlowerCount && leaf !== undefined ? motion.flowerAt(flower) : null;
+      mesh.mesh.visible = place !== null;
+      if (!place) continue;
 
-      const center = this.leafCenters[flower.leafIndex];
-      mesh.mesh.position.set(
-        center.x + flower.offsetX,
-        center.y + flower.offsetY,
-        0,
-      );
+      mesh.mesh.position.set(place.x, place.y, 0);
       mesh.mesh.rotation.z = Math.sin(time * 0.12 + leaf.phase) * 0.04;
+      mesh.mesh.scale.setScalar(place.scale);
     }
   }
 
@@ -319,7 +298,6 @@ export class LotusLeavesPass {
       });
     }
     this.leaves = leaves;
-    this.leafCenters = leaves.map(() => ({ x: 0, y: 0 }));
 
     const flowers: LotusFlowerMesh[] = [];
     for (const [flowerIndex, flower] of LOTUS_FLOWERS.entries()) {
@@ -357,7 +335,6 @@ export class LotusLeavesPass {
     }
     this.leaves = [];
     this.flowers = [];
-    this.leafCenters = [];
   }
 
   private edgePoint(

@@ -29,10 +29,13 @@ git diff 01e93a4 HEAD:web
 **Sửa trong `web/` (phần hồ cá):**
 - **Chế độ hình nền** (`?wallpaper`, file mới `src/wallpaper.ts`): ẩn giao diện, lấp đầy màn hình theo đúng tỉ lệ, nhận lệnh từ app desktop qua kênh tin nhắn của WebView2 (gọi cá, tạm dừng, thời tiết, mưa, âm thanh, số cá, fps, khách ghé hồ), và báo lại trạng thái cùng FPS thật mỗi giây. Bản Mac giả lập đúng API `window.chrome.webview` đó nên phần web không có code riêng cho Mac.
 - **Đồng bộ cài đặt giữa các cửa sổ** (`src/settings/store.ts`, `persistence.ts`): đổi ở cửa sổ cài đặt thì hình nền đổi theo ngay, qua sự kiện `storage`.
-- **Khách ghé hồ** (file mới `ducks.ts`, `crabs.ts`, `shrimp.ts`, `frogs.ts`, `duck-renderer.ts`, `bed-critter-renderer.ts`, `frog-renderer.ts`, `pond-layout.ts`): vịt và vịt con, cua, tôm, ếch, mỗi con có mục cài đặt riêng và thanh trượt "Pond visitors".
+- **Khách ghé hồ** (file mới `ducks.ts`, `crabs.ts`, `shrimp.ts`, `frogs.ts`, `duck-renderer.ts`, `bed-critter-renderer.ts`, `frog-renderer.ts`, `pond-layout.ts`): vịt và vịt con, cua, tôm, ếch, mỗi con có mục cài đặt riêng và thanh trượt "Pond visitors". Vịt va chạm với nhau chứ không chồng lên nhau; được gọi ăn thì vây quanh mồi, mỗi con một chỗ.
+- **Thời tiết ngẫu nhiên** (file mới `src/weather-cycle.ts`, mục cài đặt **Atmosphere**): đổi sang một thời tiết khác sau mỗi vài phút (mặc định 10, có thể bỏ mưa). Lịch được tính từ đồng hồ nên hồ ở mọi màn hình và cửa sổ cài đặt luôn cùng một thời tiết. Bật bằng mục "Random" trong menu thời tiết, công tắc "Random weather", hoặc menu khay; chọn một thời tiết cụ thể thì chế độ ngẫu nhiên tự tắt.
 - **Gợn sóng `wake`** cho vệt nước sau vịt; bèo cũng bị vệt này đẩy (`ripple-system.ts`, `duckweed.ts`).
-- Nối các phần trên vào `app.tsx`, `school.ts`, `fish-renderer.ts`, `settings/definition.ts`, `settings/effects.ts`, `quick-settings.tsx`, `styles.css`, `config.ts`, `surface-geometry.ts`.
-- Test mới: `src/pond-visitors.test.ts` và thêm test trong `store.test.ts`, `schema.test.ts`.
+- **Lá sen bồng bềnh** (file mới `src/lotus-motion.ts`): lá trôi chậm theo dòng nước và nhấp nhô lên xuống (lá to/nhỏ đi một chút, bóng đổ xa/gần theo độ cao). Khi gợn sóng đi qua (bấm, mưa, cá đớp mồi, vệt nước sau vịt), lá bị đẩy dạt ra, nhô lên, xoay nhẹ rồi dập dềnh về chỗ cũ; ếch nhảy lên hoặc nhảy khỏi lá thì lá bị dìm xuống rồi nảy lên. Vịt, ếch, bướm và hoa sen đều theo đúng chiếc lá đang dập dềnh. Chỉnh trong **Lotus › Float**.
+- **Cá quay đầu kiểu chữ C** (`src/school.ts`): bản gốc để đầu cá quay tự do còn thân bám theo như rắn, nên khi quay tại chỗ đầu có thể gập ngược ra sau sát thân. Giờ thân chỉ cong tối đa thành chữ C, và độ cong tối đa phụ thuộc chiều dài cá (cá dài cứng hơn, quay rộng hơn). Độ cong được dàn đều dọc thân; khi bơi chậm, cá xoay quanh khoảng 1/3 thân thay vì quanh mũi. Chỉnh trong **Koi › Turning**.
+- Nối các phần trên vào `app.tsx`, `school.ts`, `fish-renderer.ts`, `lotus-leaves.ts`, `butterflies.ts`, `settings/definition.ts`, `settings/effects.ts`, `quick-settings.tsx`, `styles.css`, `config.ts`, `surface-geometry.ts`.
+- Test mới: `src/pond-visitors.test.ts` (gồm cả lá sen), `src/koi-turning.test.ts`, `src/weather-cycle.test.ts`, và thêm test trong `store.test.ts`, `schema.test.ts`.
 - Thêm `package-lock.json` để cài đặt ổn định.
 
 **Mới hoàn toàn (không có trong bản gốc):**
@@ -47,7 +50,7 @@ Build trước (xem [Build trên Windows](#build-trên-windows)), rồi chạy `
 |---|---|
 | Bấm vào chỗ trống trên desktop | Gọi cá bơi tới chỗ đó |
 | Bấm trái vào icon ở khay | Mở **cài đặt hồ cá** (giao diện Nagomi đầy đủ; mọi thay đổi áp dụng ngay lên hình nền) |
-| Bấm phải vào icon ở khay | Thời tiết, mưa, âm thanh dòng nước, số cá, **khách ghé hồ** (bật/tắt vịt, cua, tôm, ếch), fps, xua đàn cá, tạm dừng, chọn màn hình, khởi động cùng Windows, thoát |
+| Bấm phải vào icon ở khay | Thời tiết (kể cả **Ngẫu nhiên**), mưa, âm thanh dòng nước, số cá, **khách ghé hồ** (bật/tắt vịt, cua, tôm, ếch), fps, xua đàn cá, tạm dừng, chọn màn hình, khởi động cùng Windows, thoát |
 | Chạy lại `KoiPaper.exe` khi đang chạy | Mở cửa sổ cài đặt (chỉ chạy một bản) |
 | Menu khay → **Tài nguyên đang dùng…** (hoặc `KoiPaper.exe --resources`) | Xem trực tiếp CPU, RAM, GPU, VRAM của app và từng tiến trình WebView2, biểu đồ 2 phút, FPS thật của hồ cá và lý do đang tạm dừng (nếu có) |
 
@@ -91,7 +94,7 @@ Lưu ý riêng cho Mac:
 - Bấm vào desktop để gọi cá: app chỉ theo dõi cú click chuột, không đọc bàn phím, nên không cần cấp quyền gì.
 - Nếu bật "Click wallpaper to reveal desktop" (System Settings › Desktop & Dock), mỗi lần bấm desktop các cửa sổ sẽ dạt sang bên; cá vẫn bơi tới chỗ bấm.
 - Cài đặt của app: `defaults read local.koipaper`.
-- Bản Mac được viết trên máy Windows nên **chưa được biên dịch hay chạy thử trên Mac**. Nếu `build.sh` báo lỗi, gửi lại nguyên văn lỗi để sửa.
+- Đã build và chạy tốt trên MacBook Pro M2, macOS Tahoe 26.6.2.
 
 ## Build trên Windows
 
@@ -134,5 +137,5 @@ git subtree pull --prefix=web https://github.com/msk1039/nagomi.git main
 ## Giới hạn đã biết
 
 - Bản Windows đã chạy thử trên Windows 11 25H2 với một màn hình. Nhiều màn hình và nhánh Windows 10 / Windows 11 trước 24H2 đã được viết nhưng **chưa chạy thử**.
-- Bản macOS chưa được biên dịch hay chạy thử.
+- Bản macOS đã chạy tốt trên MacBook Pro M2 (macOS Tahoe 26.6.2); máy Mac Intel và macOS cũ hơn chưa chạy thử.
 - Bấm lên icon desktop cũng gọi cá tới đó (không phân biệt icon với chỗ trống).

@@ -72,8 +72,8 @@ export class FrogRenderer {
     tintForDepth(palette.eye, submerged * 0.5, eye);
     pupil.setHex(PUPIL_COLOR);
 
-    // Closer to the eye mid-leap.
-    const length = FROGS.bodyLength * (1 + frog.height * FROGS.hopHeight * 0.035);
+    // Closer to the eye mid-leap, and riding up and down with its leaf.
+    const length = FROGS.bodyLength * (1 + frog.height * FROGS.hopHeight * 0.035 + frog.lift);
     const width = length * 0.74;
     const forward = fromAngle(frog.heading);
     const side = perpendicular(forward);

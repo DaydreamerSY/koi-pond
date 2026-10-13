@@ -272,8 +272,13 @@ internal sealed class TrayApp : ApplicationContext
         var openResources = new ToolStripMenuItem("Tài nguyên đang dùng…", null, (_, _) => ShowResources());
 
         var weather = new ToolStripMenuItem("Thời tiết");
+        var weatherItems = new List<ToolStripMenuItem>();
         foreach ((string id, string label) in Weathers)
-            weather.DropDownItems.Add(new ToolStripMenuItem(label, null, (_, _) => Broadcast(new { type = "weather", value = id })) { Tag = id });
+            weatherItems.Add(new ToolStripMenuItem(label, null, (_, _) => Broadcast(new { type = "weather", value = id })) { Tag = id });
+        // Picks a different preset every few minutes; choosing one above turns it off.
+        var randomWeather = new ToolStripMenuItem("Ngẫu nhiên", null,
+            (_, _) => Broadcast(new { type = "randomWeather", value = !(pond?.RandomWeather ?? false) }));
+        weather.DropDownItems.AddRange([.. weatherItems, new ToolStripSeparator(), randomWeather]);
 
         var rain = new ToolStripMenuItem("Mưa rơi trên mặt nước", null,
             (_, _) => Broadcast(new { type = "rain", value = !(pond?.Rain ?? false) }));
@@ -350,7 +355,8 @@ internal sealed class TrayApp : ApplicationContext
         menu.Opening += (_, _) =>
         {
             bool loaded = pond is not null;
-            foreach (ToolStripMenuItem item in weather.DropDownItems) item.Checked = (string)item.Tag! == pond?.Weather;
+            foreach (ToolStripMenuItem item in weatherItems) item.Checked = (string)item.Tag! == pond?.Weather;
+            randomWeather.Checked = pond?.RandomWeather ?? false;
             foreach (ToolStripMenuItem item in koi.DropDownItems) item.Checked = (int)item.Tag! == pond?.Koi;
             foreach (ToolStripMenuItem item in frameRate.DropDownItems) item.Checked = (string)item.Tag! == pond?.Fps;
             foreach (ToolStripMenuItem item in visitors.DropDownItems) item.Checked = VisitorCount((string)item.Tag!) > 0;

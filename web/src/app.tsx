@@ -87,6 +87,7 @@ import {
   WEATHER_PRESETS,
   type WeatherPresetId,
 } from "./weather";
+import { randomWeatherAt } from "./weather-cycle";
 import {
   onHostMessage,
   postToHost,
@@ -205,6 +206,9 @@ export function App() {
   const [crabCount] = useSetting<number>(["crabs", "visibleCount"]);
   const [shrimpCount] = useSetting<number>(["shrimp", "visibleCount"]);
   const [frogCount] = useSetting<number>(["frogs", "visibleCount"]);
+  const [randomWeather, setRandomWeather] = useSetting<boolean>(["atmosphere", "randomWeather"]);
+  const [randomMinutes] = useSetting<number>(["atmosphere", "randomMinutes"]);
+  const [randomRain] = useSetting<boolean>(["atmosphere", "randomRain"]);
   const [selectedFamily, setSelectedFamily] = useState(0);
   const [previewFamily, setPreviewFamily] = useState<number | null>(null);
   const previewFamilyRef = useRef<number | null>(null);
@@ -430,9 +434,23 @@ export function App() {
 
   const changeWeather = useCallback((id: WeatherPresetId) => {
     setFamilyPreview(null);
+    // Picking a weather yourself ends the random cycle.
+    if (settings.live.atmosphere.randomWeather) settings.set(["atmosphere", "randomWeather"], false);
     settings.setWeather(id);
     setWeatherMenuOpen(false);
   }, [setFamilyPreview]);
+
+  // Random weather follows the clock (see weather-cycle.ts), so every window agrees.
+  useEffect(() => {
+    if (!randomWeather) return;
+    const follow = (): void => {
+      const id = randomWeatherAt(Date.now(), randomMinutes, randomRain);
+      if (settings.meta().weather !== id) settings.setWeather(id);
+    };
+    follow();
+    const timer = window.setInterval(follow, 10_000);
+    return () => window.clearInterval(timer);
+  }, [randomWeather, randomMinutes, randomRain]);
 
   const handleRainChange = useCallback((enabled: boolean) => {
     settings.setRain(enabled);
@@ -672,6 +690,9 @@ export function App() {
         case "fps":
           changeFrameRate(message.value);
           break;
+        case "randomWeather":
+          settings.set(["atmosphere", "randomWeather"], message.value);
+          break;
         case "resync":
           // The storage listeners re-read localStorage themselves.
           for (const key of [SETTINGS_STORAGE_KEY, PERFORMANCE_STORAGE_KEY]) {
@@ -696,9 +717,10 @@ export function App() {
       rain: rainEnabled,
       koi: stats.koi,
       fps: frameRateCap,
+      randomWeather,
       visitors: { ducks: duckCount, crabs: crabCount, shrimp: shrimpCount, frogs: frogCount },
     });
-  }, [weatherPreset, rainEnabled, stats.koi, frameRateCap, duckCount, crabCount, shrimpCount, frogCount]);
+  }, [weatherPreset, randomWeather, rainEnabled, stats.koi, frameRateCap, duckCount, crabCount, shrimpCount, frogCount]);
 
   const revealHiddenInterfaceOnMobile = (
     event: ReactPointerEvent<HTMLElement>,
@@ -965,11 +987,11 @@ export function App() {
                       className="weather-trigger"
                       variant="ghost"
                       size="sm"
-                      aria-label={`Weather: ${selectedWeather.label}`}
+                      aria-label={`Weather: ${randomWeather ? "Random, now " : ""}${selectedWeather.label}`}
                     />
                   }
                 >
-                  <WeatherIcon id={weatherPreset} />
+                  {randomWeather ? <Shuffle aria-hidden="true" /> : <WeatherIcon id={weatherPreset} />}
                   <span className="control-label">{selectedWeather.label}</span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
@@ -979,12 +1001,21 @@ export function App() {
                   sideOffset={8}
                 >
                   <DropdownMenuRadioGroup
-                    value={weatherPreset}
-                    onValueChange={(value) =>
-                      changeWeather(value as WeatherPresetId)
-                    }
+                    value={randomWeather ? "random" : weatherPreset}
+                    onValueChange={(value) => {
+                      if (value === "random") {
+                        setRandomWeather(true);
+                        setWeatherMenuOpen(false);
+                      } else {
+                        changeWeather(value as WeatherPresetId);
+                      }
+                    }}
                   >
                     <DropdownMenuLabel>Weather and lighting</DropdownMenuLabel>
+                    <DropdownMenuRadioItem value="random" closeOnClick>
+                      <Shuffle aria-hidden="true" />
+                      Random
+                    </DropdownMenuRadioItem>
                     {WEATHER_PRESETS.map((preset) => (
                       <DropdownMenuRadioItem
                         key={preset.id}

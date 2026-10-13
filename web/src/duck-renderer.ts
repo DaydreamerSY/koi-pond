@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { DUCKS, type DuckPaletteSetting } from "./config";
-import type { Duck } from "./ducks";
+import { duckSize, type Duck } from "./ducks";
 import { add, fromAngle, mul, perpendicular, type Vec2 } from "./math";
 import { tintForDepth } from "./pond-layout";
 import { SurfaceGeometryBatch } from "./surface-geometry";
@@ -103,9 +103,7 @@ export class DuckRenderer {
     const c = this.colors;
     const batch = this.shapeBatch;
 
-    const length = DUCKS.bodyLength * (duck.duckling ? DUCKS.ducklingScale : 1);
-    // Ducklings are round balls of fluff with big heads.
-    const width = length * Math.min(1, DUCKS.bodyWidthRatio * (duck.duckling ? 1.3 : 1));
+    const { length, width } = duckSize(duck);
     const forward = fromAngle(duck.heading);
     const side = perpendicular(forward);
     const at = (along: number, across: number): Vec2 =>

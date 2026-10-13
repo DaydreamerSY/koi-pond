@@ -525,8 +525,8 @@ export class FishRenderer {
     );
     this.waterSurface.update(school, time);
     this.duckweed.update(time, school.ripples);
-    this.lotusLeaves.update(time);
-    this.butterflies.update(time);
+    this.lotusLeaves.update(time, school.lotus);
+    this.butterflies.update(time, school.lotus);
 
     this.renderer.setRenderTarget(this.underwaterTarget);
     this.renderer.clear();
