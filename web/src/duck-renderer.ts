@@ -77,9 +77,32 @@ export class DuckRenderer {
     this.shadowMaterial.opacity = DUCKS.shadow.opacity;
     this.shadowBatch.reset();
     this.shapeBatch.reset();
-    for (const duck of ducks) this.drawDuck(duck, time);
+    // Feet are underwater, below every duck; ducklings go under the adults.
+    for (const duck of ducks) this.drawFeet(duck);
+    for (const duck of ducks) if (duck.duckling) this.drawDuck(duck, time);
+    for (const duck of ducks) if (!duck.duckling) this.drawDuck(duck, time);
     this.shadowBatch.commit();
     this.shapeBatch.commit();
+  }
+
+  private paletteOf(duck: Duck): Omit<DuckPaletteSetting, "name"> | undefined {
+    return duck.duckling ? DUCKS.ducklingPalette : DUCKS.palettes[duck.palette % Math.max(1, DUCKS.palettes.length)];
+  }
+
+  /** Paddling feet, seen through the water. */
+  private drawFeet(duck: Duck): void {
+    const palette = this.paletteOf(duck);
+    if (!palette) return;
+    const feet = tintForDepth(palette.feet, 0.55, this.colors.feet);
+    const { length, width } = duckSize(duck);
+    const forward = fromAngle(duck.heading);
+    const side = perpendicular(forward);
+    for (const direction of [-1, 1]) {
+      const stroke = Math.sin(duck.paddlePhase + (direction > 0 ? Math.PI : 0));
+      const heel = add(add(duck.position, mul(forward, length * (-0.18 + stroke * 0.1))), mul(side, width * direction * 0.26));
+      const toe = add(heel, mul(rotate(forward, Math.PI + direction * 0.5), length * 0.16));
+      this.shapeBatch.triangle(heel, add(toe, mul(side, direction * width * 0.14)), add(toe, mul(side, -direction * width * 0.1)), feet);
+    }
   }
 
   private setColors(source: Omit<DuckPaletteSetting, "name">, headDip: number): void {
@@ -91,16 +114,13 @@ export class DuckRenderer {
     c.beak.setHex(source.beak);
     c.tail.setHex(source.tail);
     c.eye.setHex(EYE_COLOR);
-    // The feet are always underwater; the head is while dabbling.
-    tintForDepth(source.feet, 0.55, c.feet);
+    // The head is underwater while dabbling.
     tintForDepth(source.head, headDip * 0.75, c.head);
     if (headDip > 0) tintForDepth(source.beak, headDip * 0.75, c.beak);
   }
 
   private drawDuck(duck: Duck, time: number): void {
-    const palette = duck.duckling
-      ? DUCKS.ducklingPalette
-      : DUCKS.palettes[duck.palette % Math.max(1, DUCKS.palettes.length)];
+    const palette = this.paletteOf(duck);
     if (!palette) return;
     this.setColors(palette, duck.headDip);
     const c = this.colors;
@@ -115,14 +135,6 @@ export class DuckRenderer {
     // Shadow on the pond bed.
     const shadowCenter = add(duck.position, DUCKS.shadow.offset);
     this.shadowBatch.ellipse(shadowCenter, forward, side, length * 0.56, width * 0.52, undefined, 12);
-
-    // Paddling feet, seen through the water.
-    for (const direction of [-1, 1]) {
-      const stroke = Math.sin(duck.paddlePhase + (direction > 0 ? Math.PI : 0));
-      const heel = at(-0.18 + stroke * 0.1, direction * 0.26);
-      const toe = add(heel, mul(rotate(forward, Math.PI + direction * 0.5), length * 0.16));
-      batch.triangle(heel, add(toe, mul(side, direction * width * 0.14)), add(toe, mul(side, -direction * width * 0.1)), c.feet);
-    }
 
     // Wings spread while flapping off in a hurry.
     if (duck.flap > 0.02) {

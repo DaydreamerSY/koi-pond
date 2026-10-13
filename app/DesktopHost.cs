@@ -86,9 +86,10 @@ internal sealed class DesktopHost
             screenBounds.X - origin.X, screenBounds.Y - origin.Y, screenBounds.Width, screenBounds.Height,
             SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_SHOWWINDOW | (IsChildLayout ? 0 : SWP_NOZORDER));
 
-        // Keep Explorer's wallpaper below ours.
+        // Keep Explorer's wallpaper below ours: at the very bottom, not just under
+        // this window, or it would cover the ponds attached before (other monitors).
         if (IsChildLayout)
-            SetWindowPos(WallpaperLayer, window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(WallpaperLayer, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 
     /// <summary>True when the screen point is on the desktop itself (icons layer or wallpaper).</summary>
