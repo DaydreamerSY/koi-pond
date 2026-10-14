@@ -38,7 +38,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     private var soundItem: NSMenuItem!
     private var pauseItem: NSMenuItem!
     private var autoPauseItem: NSMenuItem!
-    private var allScreensItem: NSMenuItem!
+    private var bigPondItem: NSMenuItem!
+    private var separatePondsItem: NSMenuItem!
     private var mainScreenItem: NSMenuItem!
     private var loginItem: NSMenuItem!
 
@@ -97,11 +98,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     // MARK: - Wallpapers
 
+    /// Whether one window can span several screens: not while each display has
+    /// its own Spaces (System Settings › Desktop & Dock, on by default).
+    private var canSpanScreens: Bool {
+        !NSScreen.screensHaveSeparateSpaces
+    }
+
     private func rebuild() {
         wallpapers.forEach { $0.close() }
-        let screens = preferences.allScreens ? NSScreen.screens : Array(NSScreen.screens.prefix(1))
-        wallpapers = screens.map { screen in
-            let wallpaper = Wallpaper(screen: screen)
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else {
+            wallpapers = []
+            return
+        }
+        let ponds: [[NSScreen]]
+        if !preferences.allScreens {
+            ponds = [[screens[0]]]
+        } else if preferences.separatePonds || !canSpanScreens {
+            ponds = screens.map { [$0] }
+        } else {
+            // One big pond across every screen: koi, ducks and the rest swim from one to the next.
+            ponds = [screens]
+        }
+        wallpapers = ponds.map { group in
+            let wallpaper = Wallpaper(screens: group)
             wallpaper.onState = { [weak self] source, state in
                 // The main screen's pond speaks for all of them in the menu.
                 if source === self?.wallpapers.first { self?.pond = state }
@@ -139,7 +159,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     @objc private func updatePlayback() {
         let covered = preferences.autoPause ? DesktopProbe.coveredScreens(NSScreen.screens) : []
         for wallpaper in wallpapers {
-            let hidden = covered.contains(wallpaper.displayID) || !wallpaper.isVisibleOnScreen
+            // A big pond keeps going while any of its screens shows it.
+            let hidden = wallpaper.displayIDs.isSubset(of: covered) || !wallpaper.isVisibleOnScreen
             wallpaper.pauseReason =
                 preferences.paused ? "bạn đã bấm Tạm dừng"
                 : screenLocked ? "máy đang khoá"
@@ -154,10 +175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     private func desktopClicked(at point: NSPoint) {
         guard DesktopProbe.isDesktop(at: point) else { return }
-        // The pond on the screen under the pointer, whichever screen that is.
+        // The pond under the pointer, on whichever screen (or part of the big pond) it is.
         let screen = NSScreen.screens.first(where: { NSMouseInRect(point, $0.frame, false) })
         let wallpaper = wallpapers.first(where: { NSMouseInRect(point, $0.window.frame, false) })
-            ?? wallpapers.first(where: { $0.displayID == screen?.displayID })
+            ?? screen.flatMap { screen in wallpapers.first(where: { $0.displayIDs.contains(screen.displayID) }) }
         wallpaper?.callFish(at: point)
     }
 
@@ -260,9 +281,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
         let screensMenu = NSMenuItem(title: "Hiển thị trên", action: nil, keyEquivalent: "")
         screensMenu.submenu = NSMenu()
-        allScreensItem = ActionItem("Tất cả màn hình") { [weak self] in self?.setAllScreens(true) }
-        mainScreenItem = ActionItem("Chỉ màn hình chính") { [weak self] in self?.setAllScreens(false) }
-        screensMenu.submenu?.addItem(allScreensItem)
+        bigPondItem = ActionItem("Tất cả màn hình, một hồ lớn") { [weak self] in self?.setScreens(all: true, separate: false) }
+        separatePondsItem = ActionItem("Tất cả màn hình, mỗi màn một hồ riêng") { [weak self] in self?.setScreens(all: true, separate: true) }
+        mainScreenItem = ActionItem("Chỉ màn hình chính") { [weak self] in
+            guard let self else { return }
+            setScreens(all: false, separate: preferences.separatePonds)
+        }
+        screensMenu.submenu?.addItem(bigPondItem)
+        screensMenu.submenu?.addItem(separatePondsItem)
         screensMenu.submenu?.addItem(mainScreenItem)
         menu.addItem(screensMenu)
 
@@ -291,14 +317,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         soundItem.state = preferences.sound ? .on : .off
         pauseItem.state = preferences.paused ? .on : .off
         autoPauseItem.state = preferences.autoPause ? .on : .off
-        allScreensItem.state = preferences.allScreens ? .on : .off
+        bigPondItem.state = preferences.allScreens && !preferences.separatePonds ? .on : .off
+        separatePondsItem.state = preferences.allScreens && preferences.separatePonds ? .on : .off
         mainScreenItem.state = preferences.allScreens ? .off : .on
+        // A window can't span screens while each has its own Spaces; say what to change.
+        bigPondItem.title = canSpanScreens || NSScreen.screens.count < 2
+            ? "Tất cả màn hình, một hồ lớn"
+            : "Tất cả màn hình, một hồ lớn (cần tắt “Displays have separate Spaces”)"
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
-    private func setAllScreens(_ all: Bool) {
-        guard preferences.allScreens != all else { return }
+    private func setScreens(all: Bool, separate: Bool) {
+        guard preferences.allScreens != all || preferences.separatePonds != separate else { return }
         preferences.allScreens = all
+        preferences.separatePonds = separate
         rebuild()
     }
 
@@ -358,11 +390,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         resourceWindow?.show()
     }
 
-    /// One line per screen: the pond's real frame rate, or why it's paused.
+    /// One line per pond: its real frame rate, or why it's paused.
     private func pondStatus() -> String {
         guard !wallpapers.isEmpty else { return "Hồ cá     chưa chạy" }
         return wallpapers.enumerated().map { index, wallpaper in
-            let screen = wallpapers.count == 1 ? "Hồ cá" : index == 0 ? "Màn hình chính" : "Màn hình \(index + 1)"
+            let screen = wallpaper.displayIDs.count > 1 ? "Hồ lớn (\(wallpaper.displayIDs.count) màn hình)"
+                : wallpapers.count == 1 ? "Hồ cá"
+                : index == 0 ? "Màn hình chính"
+                : "Màn hình \(index + 1)"
             return wallpaper.isPaused
                 ? "\(screen)     tạm dừng (\(wallpaper.pauseReason ?? ""))"
                 : "\(screen)     đang chạy, \(wallpaper.fps) khung hình/giây"

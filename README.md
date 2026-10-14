@@ -74,7 +74,8 @@ Build trước (xem [Build trên Windows](#build-trên-windows)), rồi chạy `
 Tự động:
 - **Tự dừng** khi một cửa sổ phóng to hoặc app toàn màn hình (game, phim) che kín màn hình, hay khi khoá máy, để không tốn GPU/CPU. Tắt được trong menu. Trong lúc dừng, hồ cá trả bớt bộ nhớ cho Windows (bộ nhớ riêng của tiến trình vẽ giảm khoảng 30 MB) và app gỡ hook chuột toàn hệ thống, nên khi chơi game mỗi cú di chuột không còn phải đi qua Koi Paper.
 - Mặc định chạy **30 fps** (khoảng 1–2% CPU trên máy 12 luồng); đổi trong menu "Tốc độ khung hình".
-- Mỗi màn hình có một hồ riêng; âm thanh chỉ phát ở màn hình chính.
+- **Nhiều màn hình thành một hồ lớn** (mặc định): một hồ duy nhất phủ hình chữ nhật bao quanh tất cả màn hình (ngang, dọc, lệch nhau đều được), nên cá, vịt, cua, tôm, ếch, bướm bơi và bay qua lại giữa các màn hình. Lá sen và bèo nằm theo mép ngoài của cả hồ lớn. Hồ chỉ tự dừng khi *mọi* màn hình đều bị che kín. Phần của hình chữ nhật không thuộc màn hình nào (khi các màn khác kích thước hoặc đặt lệch) vẫn là nước, chỉ là không nhìn thấy, nên con vật có thể khuất ở đó một lúc. Menu **Hiển thị trên** còn có "mỗi màn một hồ riêng" (như trước) và "chỉ màn hình chính". Âm thanh chỉ phát từ hồ có màn hình chính.
+- Số cá và khách ghé hồ là của cả hồ lớn, nên trải ra nhiều màn hình sẽ thưa hơn; tăng trong menu "Số cá koi" hoặc mục Pond visitors nếu muốn.
 - Explorer khởi động lại, đổi độ phân giải hoặc cắm/rút màn hình thì hình nền tự dựng lại.
 - Thoát (hoặc app bị tắt ngang) thì desktop trở về hình nền cũ.
 
@@ -108,8 +109,9 @@ open "dist-mac/Koi Paper.app"
 Không có git trên Mac? Trên Windows chạy `.\build.ps1` rồi `.\pack-mac.ps1` để tạo `dist\KoiPaper-mac.zip`, chép sang Mac, giải nén rồi chạy `bash mac/build.sh`.
 
 Lưu ý riêng cho Mac:
-- Bấm vào desktop để gọi cá: app chỉ theo dõi cú click chuột, không đọc bàn phím, nên không cần cấp quyền gì. Với nhiều màn hình, click được tính theo màn hình đang có con trỏ; chỉ cửa sổ thật (app, Dock, thanh menu) mới chặn click, còn mọi lớp thuộc desktop (hình nền, icon, widget) thì không.
+- Bấm vào desktop để gọi cá: app chỉ theo dõi cú click chuột, không đọc bàn phím, nên không cần cấp quyền gì. Với nhiều màn hình, click được tính theo chỗ con trỏ trên hồ lớn (hoặc theo màn hình, nếu chọn mỗi màn một hồ); chỉ cửa sổ thật (app, Dock, thanh menu) mới chặn click, còn mọi lớp thuộc desktop (hình nền, icon, widget) thì không.
 - Nếu bật "Click wallpaper to reveal desktop" (System Settings › Desktop & Dock), mỗi lần bấm desktop các cửa sổ sẽ dạt sang bên; cá vẫn bơi tới chỗ bấm.
+- Hồ lớn trải qua nhiều màn hình cần tắt **Displays have separate Spaces** (System Settings › Desktop & Dock › Mission Control, phải đăng xuất rồi đăng nhập lại): khi tuỳ chọn này bật (mặc định của macOS), một cửa sổ không thể trải qua nhiều màn hình, nên app tự quay về mỗi màn một hồ, và menu ghi rõ cần tắt gì.
 - Cài đặt của app: `defaults read local.koipaper`.
 - Đã build và chạy tốt trên MacBook Pro M2, macOS Tahoe 26.6.2.
 
@@ -139,20 +141,21 @@ git subtree pull --prefix=web https://github.com/msk1039/nagomi.git main
 
 **`app/`** (Windows):
 - `DesktopHost.cs`: tìm chỗ sau icon desktop. Windows 11 24H2 trở lên đặt cửa sổ (dạng layered) vào `Progman`, giữa `SHELLDLL_DefView` (icon) và `WorkerW` (hình nền của Explorer); Windows cũ hơn dùng `WorkerW` cấp cao nhất kiểu truyền thống.
-- `WallpaperWindow.cs`: mỗi màn hình một cửa sổ Win32 chứa WebView2, nạp `wwwroot` qua host ảo `https://koipaper.example`.
+- `WallpaperWindow.cs`: cửa sổ Win32 chứa WebView2, nạp `wwwroot` qua host ảo `https://koipaper.example`; phủ một màn hình, hoặc phủ hình chữ nhật bao quanh tất cả màn hình để thành một hồ lớn.
 - `DesktopClickHook.cs`: hook chuột cấp thấp; cửa sổ sau icon không nhận được click nên click trên desktop được chuyển vào hồ cá.
 - `Occlusion.cs`: phát hiện màn hình bị che kín để tự dừng.
 - `ResourceSampler.cs`, `ResourceForm.cs`: cửa sổ tài nguyên (CPU, RAM, GPU, VRAM theo từng tiến trình).
 - `TrayApp.cs`: icon khay, menu, vòng đời; `SettingsForm.cs`: cửa sổ cài đặt.
 
 **`mac/`** (macOS):
-- `Wallpaper.swift`: mỗi màn hình một cửa sổ ở tầng ảnh nền desktop (dưới icon, có mặt ở mọi Space).
+- `Wallpaper.swift`: cửa sổ ở tầng ảnh nền desktop (dưới icon, có mặt ở mọi Space), phủ một màn hình hoặc trải qua tất cả màn hình thành một hồ lớn.
 - `PondWeb.swift`: phục vụ `web/dist` qua `koipaper://app/` và giả lập API WebView2 cho phần web.
 - `DesktopProbe.swift`: nhận biết click trên desktop và màn hình bị che kín, dựa vào danh sách cửa sổ của macOS.
 - `ResourceMonitor.swift`: cửa sổ tài nguyên. `AppDelegate.swift`: menu, vòng đời, cửa sổ cài đặt.
 
 ## Giới hạn đã biết
 
-- Bản Windows đã chạy thử trên Windows 11 25H2 với một màn hình. Nhiều màn hình và nhánh Windows 10 / Windows 11 trước 24H2 đã được viết nhưng **chưa chạy thử**.
+- Bản Windows đã chạy thử trên Windows 11 25H2 với một màn hình và với hai màn hình xếp chồng (một hồ lớn, cá bơi qua lại giữa hai màn). Nhánh Windows 10 / Windows 11 trước 24H2 đã được viết nhưng **chưa chạy thử**.
+- Hồ lớn trên các màn hình có tỉ lệ thu phóng (DPI) khác nhau chưa chạy thử; một điểm ảnh của hồ sẽ to nhỏ khác nhau giữa các màn.
 - Bản macOS đã chạy tốt trên MacBook Pro M2 (macOS Tahoe 26.6.2); máy Mac Intel và macOS cũ hơn chưa chạy thử.
 - Bấm lên icon desktop cũng gọi cá tới đó (không phân biệt icon với chỗ trống).

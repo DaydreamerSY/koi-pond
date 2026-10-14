@@ -27,13 +27,22 @@ extension NSScreen {
     }
 }
 
-/// One screen's pond: a borderless window at the desktop-picture level, so it
-/// sits under the desktop icons and every other window, on every Space.
+/// A borderless window AppKit leaves where it's put, even across several screens.
+final class SpanningWindow: NSWindow {
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
+}
+
+/// A pond: a borderless window at the desktop-picture level, so it sits under
+/// the desktop icons and every other window, on every Space. It covers one
+/// screen, or spans several as one big pond (the rectangle around them).
 @MainActor
 final class Wallpaper {
     let window: NSWindow
     let webView: WKWebView
-    let displayID: CGDirectDisplayID
+    /// The screens this pond covers.
+    let displayIDs: Set<CGDirectDisplayID>
 
     var onState: ((Wallpaper, PondState) -> Void)?
 
@@ -46,10 +55,11 @@ final class Wallpaper {
     private var pageReady = false
     private var sound = false
 
-    init(screen: NSScreen) {
-        displayID = screen.displayID
-        window = NSWindow(contentRect: screen.frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        window.setFrame(screen.frame, display: false)
+    init(screens: [NSScreen]) {
+        displayIDs = Set(screens.map(\.displayID))
+        let frame = screens.dropFirst().reduce(screens[0].frame) { $0.union($1.frame) }
+        window = SpanningWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.setFrame(frame, display: false)
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)))
         window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         window.ignoresMouseEvents = true
@@ -61,7 +71,7 @@ final class Wallpaper {
 
         var receive: (([String: Any]) -> Void)?
         webView = PondWeb.makeWebView(wallpaper: true) { message in receive?(message) }
-        webView.frame = NSRect(origin: .zero, size: screen.frame.size)
+        webView.frame = NSRect(origin: .zero, size: frame.size)
         webView.autoresizingMask = [.width, .height]
         window.contentView = webView
         receive = { [weak self] message in self?.receive(message) }

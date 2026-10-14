@@ -4,7 +4,11 @@ using static KoiPaper.Native;
 
 namespace KoiPaper;
 
-/// <summary>One monitor's pond: a plain Win32 window hosting a WebView2, parked behind the desktop icons.</summary>
+/// <summary>
+/// A pond: a plain Win32 window hosting a WebView2, parked behind the desktop
+/// icons. It covers one monitor, or spans several as one big pond (the
+/// rectangle around them; the desktop behind the icons spans them all too).
+/// </summary>
 internal sealed class WallpaperWindow : NativeWindow, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -15,10 +19,10 @@ internal sealed class WallpaperWindow : NativeWindow, IDisposable
     private bool paused;
     private bool sound;
 
-    public WallpaperWindow(Screen screen)
+    public WallpaperWindow(IReadOnlyList<Screen> screens)
     {
-        Screen = screen;
-        Bounds = screen.Bounds;
+        Screens = screens;
+        Bounds = screens.Select(screen => screen.Bounds).Aggregate(Rectangle.Union);
         CreateHandle(new CreateParams
         {
             Caption = "Koi Paper",
@@ -31,7 +35,10 @@ internal sealed class WallpaperWindow : NativeWindow, IDisposable
         });
     }
 
-    public Screen Screen { get; }
+    /// <summary>The monitors this pond covers.</summary>
+    public IReadOnlyList<Screen> Screens { get; }
+
+    public bool OnPrimary => Screens.Any(screen => screen.Primary);
 
     public Rectangle Bounds { get; }
 

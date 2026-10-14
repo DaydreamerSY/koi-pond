@@ -179,8 +179,13 @@ internal sealed class TrayApp : ApplicationContext
             return;
         }
 
-        Screen[] screens = settings.AllMonitors ? Screen.AllScreens : [Screen.PrimaryScreen ?? Screen.AllScreens[0]];
-        var created = screens.Select(screen => new WallpaperWindow(screen)).ToList();
+        Screen[] all = Screen.AllScreens;
+        List<Screen[]> ponds;
+        if (!settings.AllMonitors) ponds = [[Screen.PrimaryScreen ?? all[0]]];
+        else if (settings.SeparatePonds) ponds = [.. all.Select(screen => new[] { screen })];
+        // One big pond across every monitor: koi, ducks and the rest swim from one to the next.
+        else ponds = [all];
+        var created = ponds.Select(screens => new WallpaperWindow(screens)).ToList();
         foreach (WallpaperWindow wallpaper in created)
         {
             wallpaper.StateReceived += OnPondState;
@@ -195,7 +200,7 @@ internal sealed class TrayApp : ApplicationContext
 
         foreach (WallpaperWindow wallpaper in created) wallpaper.AttachTo(host);
         UpdatePlayback();
-        Log.Write($"Attached {created.Count} wallpaper(s) ({(host.IsChildLayout ? "24H2+" : "legacy")} desktop layout).");
+        Log.Write($"Attached {created.Count} wallpaper(s) over {all.Length} monitor(s): {string.Join(", ", created.Select(w => w.Bounds))} ({(host.IsChildLayout ? "24H2+" : "legacy")} desktop layout).");
     }
 
     private void DisposeWallpapers()
@@ -225,7 +230,8 @@ internal sealed class TrayApp : ApplicationContext
             wallpaper.PauseReason =
                 settings.Paused ? "bạn đã bấm Tạm dừng"
                 : sessionLocked ? "máy đang khoá"
-                : covered.Contains(wallpaper.Screen.DeviceName) ? "bị cửa sổ khác che kín"
+                // A big pond keeps going while any of its monitors shows it.
+                : wallpaper.Screens.All(screen => covered.Contains(screen.DeviceName)) ? "bị cửa sổ khác che kín"
                 : null;
             wallpaper.SetPaused(wallpaper.PauseReason is not null);
             // One river is enough: only the main monitor's pond plays sound.
@@ -245,29 +251,29 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     private WallpaperWindow? SoundWallpaper =>
-        wallpapers.FirstOrDefault(wallpaper => wallpaper.Screen.Primary) ?? wallpapers.FirstOrDefault();
+        wallpapers.FirstOrDefault(wallpaper => wallpaper.OnPrimary) ?? wallpapers.FirstOrDefault();
 
     private void OnPondState(WallpaperWindow source, PondState state)
     {
         if (source == SoundWallpaper) pond = state;
     }
 
-    /// <summary>Calls the fish on the monitor under the pointer, whichever monitor that is.</summary>
+    /// <summary>Calls the fish to the pointer, on whichever monitor (or part of the big pond) it is.</summary>
     private void OnDesktopClick(Point point)
     {
         string monitor = Screen.FromPoint(point).DeviceName;
         WallpaperWindow? wallpaper =
             wallpapers.FirstOrDefault(candidate => candidate.IsAttached && candidate.Bounds.Contains(point))
-            ?? wallpapers.FirstOrDefault(candidate => candidate.IsAttached && candidate.Screen.DeviceName == monitor);
+            ?? wallpapers.FirstOrDefault(candidate => candidate.IsAttached && candidate.Screens.Any(screen => screen.DeviceName == monitor));
         if (wallpaper is null)
         {
-            Log.Write($"Desktop click at {point} on {monitor} matched no pond: {string.Join(", ", wallpapers.Select(w => $"{w.Screen.DeviceName} {w.Bounds}"))}");
+            Log.Write($"Desktop click at {point} on {monitor} matched no pond: {string.Join(", ", wallpapers.Select(w => w.Bounds))}");
             return;
         }
         wallpaper.CallFishAt(point);
     }
 
-    /// <summary>Pond settings go to every monitor's pond (they also persist, shared through localStorage).</summary>
+    /// <summary>Pond settings go to every pond (they also persist, shared through localStorage).</summary>
     private void Broadcast(object message)
     {
         foreach (WallpaperWindow wallpaper in wallpapers) wallpaper.Post(message);
@@ -345,9 +351,10 @@ internal sealed class TrayApp : ApplicationContext
         });
 
         var monitors = new ToolStripMenuItem("Hiển thị trên");
-        var allMonitors = new ToolStripMenuItem("Tất cả màn hình", null, (_, _) => SetAllMonitors(true));
-        var primaryMonitor = new ToolStripMenuItem("Chỉ màn hình chính", null, (_, _) => SetAllMonitors(false));
-        monitors.DropDownItems.AddRange([allMonitors, primaryMonitor]);
+        var bigPond = new ToolStripMenuItem("Tất cả màn hình, một hồ lớn", null, (_, _) => SetMonitors(all: true, separate: false));
+        var separatePonds = new ToolStripMenuItem("Tất cả màn hình, mỗi màn một hồ riêng", null, (_, _) => SetMonitors(all: true, separate: true));
+        var primaryMonitor = new ToolStripMenuItem("Chỉ màn hình chính", null, (_, _) => SetMonitors(all: false, separate: settings.SeparatePonds));
+        monitors.DropDownItems.AddRange([bigPond, separatePonds, primaryMonitor]);
 
         var autostart = new ToolStripMenuItem("Khởi động cùng Windows", null, (_, _) =>
         {
@@ -389,7 +396,8 @@ internal sealed class TrayApp : ApplicationContext
             sound.Checked = settings.Sound;
             pause.Checked = settings.Paused;
             autoPause.Checked = settings.AutoPause;
-            allMonitors.Checked = settings.AllMonitors;
+            bigPond.Checked = settings.AllMonitors && !settings.SeparatePonds;
+            separatePonds.Checked = settings.AllMonitors && settings.SeparatePonds;
             primaryMonitor.Checked = !settings.AllMonitors;
             autostart.Checked = Autostart.IsEnabled;
         };
@@ -398,10 +406,11 @@ internal sealed class TrayApp : ApplicationContext
 
     private int VisitorCount(string kind) => pond?.Visitors?.GetValueOrDefault(kind) ?? 0;
 
-    private void SetAllMonitors(bool all)
+    private void SetMonitors(bool all, bool separate)
     {
-        if (settings.AllMonitors == all) return;
+        if (settings.AllMonitors == all && settings.SeparatePonds == separate) return;
         settings.AllMonitors = all;
+        settings.SeparatePonds = separate;
         settings.Save();
         Rebuild();
     }
@@ -423,13 +432,17 @@ internal sealed class TrayApp : ApplicationContext
         resourceForm.Activate();
     }
 
-    /// <summary>One line per monitor: the pond's real frame rate, or why it's paused.</summary>
+    /// <summary>One line per pond: its real frame rate, or why it's paused.</summary>
     private string PondStatus()
     {
         if (wallpapers.Count == 0) return "Hồ cá: chưa chạy";
         return string.Join("   ·   ", wallpapers.Select((wallpaper, index) =>
         {
-            string screen = wallpapers.Count == 1 ? "Hồ cá" : wallpaper.Screen.Primary ? "Màn hình chính" : $"Màn hình {index + 1}";
+            string screen =
+                wallpaper.Screens.Count > 1 ? $"Hồ lớn ({wallpaper.Screens.Count} màn hình)"
+                : wallpapers.Count == 1 ? "Hồ cá"
+                : wallpaper.OnPrimary ? "Màn hình chính"
+                : $"Màn hình {index + 1}";
             return wallpaper.IsPaused
                 ? $"{screen}: tạm dừng ({wallpaper.PauseReason})"
                 : $"{screen}: đang chạy, {wallpaper.Fps} khung hình/giây";

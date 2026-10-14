@@ -20,6 +20,9 @@ internal sealed class AppSettings
 
     public bool AllMonitors { get; set; } = true;
 
+    /// <summary>With <see cref="AllMonitors"/>: a pond per monitor instead of one big pond across them all.</summary>
+    public bool SeparatePonds { get; set; }
+
     public bool WelcomeShown { get; set; }
 
     public static string LocalDirectory =>

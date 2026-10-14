@@ -25,4 +25,10 @@ final class Preferences {
         get { defaults.object(forKey: "allScreens") as? Bool ?? true }
         set { defaults.set(newValue, forKey: "allScreens") }
     }
+
+    /// With `allScreens`: a pond per screen instead of one big pond across them all.
+    var separatePonds: Bool {
+        get { defaults.bool(forKey: "separatePonds") }
+        set { defaults.set(newValue, forKey: "separatePonds") }
+    }
 }
