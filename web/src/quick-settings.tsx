@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { RotateCcw } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { LoopClipPanel } from "./loop-clip-panel";
 import { SettingsColorInput, SettingsSlider } from "./settings-controls";
 import { useSetting } from "./settings/react";
 import { settings } from "./settings/store";
@@ -440,6 +441,8 @@ export function QuickSettings({
           onChange={setPixelDetail}
         />
       </section>
+
+      <LoopClipPanel />
     </div>
   );
 }

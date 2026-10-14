@@ -51,6 +51,8 @@ internal static class WebHost
         core.NavigationStarting += (_, e) =>
         {
             if (Uri.TryCreate(e.Uri, UriKind.Absolute, out Uri? uri) && uri.Host == HostName) return;
+            // The pond's own files, made in the page (a recorded loop clip being saved).
+            if (e.Uri.StartsWith($"blob:https://{HostName}/", StringComparison.Ordinal)) return;
             e.Cancel = true;
             OpenExternal(e.Uri);
         };

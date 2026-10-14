@@ -46,6 +46,7 @@ git diff 01e93a4 HEAD:web
 - **Độ mịn pixel** (mục cài đặt **Display › Pixel detail**, `fish-renderer.ts`): hồ vẫn giữ nguyên kích thước, chỉ đổi số pixel dùng để vẽ mỗi pixel của hồ, từ 0,5× (pixel to, vỡ hơn) đến 4× (mịn hơn, GPU làm nặng hơn); 1× là bản gốc. Không bao giờ vẽ mịn hơn số pixel thật của màn hình. Ở mức cao, đường gân lá sen và chân cua, tôm mảnh hơn vì luôn rộng đúng 1 pixel.
 - **Bóng không đậm chồng lên nhau** (file mới `shadows.ts`, `fish-renderer.ts`): bóng trên cùng một mặt (đáy hồ hoặc mặt nước) gộp làm một, chỗ chồng nhau chỉ tối một lần, dùng stencil buffer. Bản gốc vẽ bóng bán trong suốt chồng lên nhau, nên chỗ đầu và thân cá giao nhau, hai lá sen, cá bơi dưới lá sen, bèo… đều đậm hơn.
 - **Đốm màu đi cùng con cá** (`fish-renderer.ts`): thân và đốm của mỗi con được vẽ liền nhau trong một lưới, con ở sâu vẽ trước. Bản gốc vẽ thân mọi con rồi mới vẽ đốm mọi con, nên khi hai con bơi chồng lên nhau, đốm của con dưới hiện đè lên con trên.
+- **Quay clip lặp** (mục cài đặt **Loop clip**, file mới `src/clip-recorder.ts`, `src/loop-clip-panel.tsx`): quay hồ cá theo đúng cài đặt và thời tiết đang chọn thành một file MP4 lặp lại liền mạch (1080p, 1440p hoặc 4K; 20, 30 hoặc 60 giây), lưu vào thư mục Downloads. Một hồ riêng được mô phỏng và vẽ ngầm từng khung theo nhịp cố định 30 khung/giây, nên clip mượt đều dù máy nhanh hay chậm, và hồ đang hiện trên màn hình không bị ảnh hưởng. Hai giây cuối hoà dần vào hai giây đầu, nên chỗ nối mượt ngang một khung khoá bình thường trong clip. Các ô pixel được phóng to mà không làm nhoè. Mã hoá bằng WebCodecs của trình duyệt (HEVC nếu được, không thì H.264), đóng gói bằng [Mediabunny](https://github.com/Vanilagy/mediabunny) (MPL-2.0); phần này chỉ được nạp khi bấm quay. Trên Windows, clip 4K dài 30 giây quay mất khoảng 15 giây, nặng khoảng 86 MB.
 - **Nhẹ máy hơn, hình vẫn y nguyên**:
   - Khi giới hạn fps (mặc định 30), giữa hai khung hình hồ cá ngủ trên một bộ hẹn giờ rồi mới xin khung hình kế tiếp, thay vì thức dậy theo mọi nhịp quét của màn hình (144–165 Hz) chỉ để bỏ qua (`frame-limiter.ts`, `app.tsx`). Số lần đánh thức trình duyệt giảm khoảng một nửa (126 → 60 lần/giây trên màn 164 Hz), CPU giảm khoảng 25–35%, khung hình còn đều hơn trước.
   - Bóng đổ một màu (lá sen, bèo, vịt, ếch, cua, tôm, bướm, cá nhỏ) được vẽ một lượt thay vì hai lượt mặt sau/mặt trước như three.js mặc định làm với vật thể trong suốt hai mặt; trước đây mỗi khung hình phải tính lại shader cho khoảng 22 lớp bóng (`forceSinglePass`).
@@ -113,6 +114,18 @@ Lưu ý riêng cho Mac:
 - Nếu bật "Click wallpaper to reveal desktop" (System Settings › Desktop & Dock), mỗi lần bấm desktop các cửa sổ sẽ dạt sang bên; cá vẫn bơi tới chỗ bấm.
 - Hồ lớn trải qua nhiều màn hình cần tắt **Displays have separate Spaces** (System Settings › Desktop & Dock › Mission Control, phải đăng xuất rồi đăng nhập lại): khi tuỳ chọn này bật (mặc định của macOS), một cửa sổ không thể trải qua nhiều màn hình, nên app tự quay về mỗi màn một hồ, và menu ghi rõ cần tắt gì.
 - Cài đặt của app: `defaults read local.koipaper`.
+
+**Hồ cá trên màn hình khoá (mẹo, không chính thức):** macOS không cho app vẽ lên màn hình khoá, nhưng màn hình khoá phát video của hình nền "Aerial". `mac/lockscreen-clip.sh` thay video của một Aerial bằng clip hồ cá:
+
+1. System Settings › Wallpaper: chọn một Aerial (Landscape, Cityscape…) và chờ nó tải xong.
+2. Trong cài đặt hồ cá, mục **Loop clip**: chọn 4K và bấm **Record loop clip**; file nằm trong Downloads.
+3. Chạy:
+
+```bash
+bash mac/lockscreen-clip.sh install ~/Downloads/koi-pond-loop-3840x2160-30s.mp4
+```
+
+Script đổi clip sang HEVC bằng `avconvert` (có sẵn trong macOS), sao lưu video gốc của Apple, rồi chép clip vào chỗ video Aerial mới tải nhất (hoặc video bạn chỉ định, xem `bash mac/lockscreen-clip.sh list`). Cần mật khẩu quản trị. Khoá máy (Control-Command-Q) để xem; nếu bật "Show as screen saver" thì trình bảo vệ màn hình cũng là hồ cá. `bash mac/lockscreen-clip.sh restore` trả lại video gốc. Một bản cập nhật macOS có thể tải lại video gốc; khi đó chạy lại lệnh install. Windows thì không làm được: màn hình khoá của Windows chỉ nhận ảnh tĩnh.
 - Đã build và chạy tốt trên MacBook Pro M2, macOS Tahoe 26.6.2.
 
 ## Build trên Windows
@@ -152,10 +165,12 @@ git subtree pull --prefix=web https://github.com/msk1039/nagomi.git main
 - `PondWeb.swift`: phục vụ `web/dist` qua `koipaper://app/` và giả lập API WebView2 cho phần web.
 - `DesktopProbe.swift`: nhận biết click trên desktop và màn hình bị che kín, dựa vào danh sách cửa sổ của macOS.
 - `ResourceMonitor.swift`: cửa sổ tài nguyên. `AppDelegate.swift`: menu, vòng đời, cửa sổ cài đặt.
+- `lockscreen-clip.sh`: đặt clip hồ cá lên màn hình khoá (thay video của một Aerial).
 
 ## Giới hạn đã biết
 
 - Bản Windows đã chạy thử trên Windows 11 25H2 với một màn hình và với hai màn hình xếp chồng (một hồ lớn, cá bơi qua lại giữa hai màn). Nhánh Windows 10 / Windows 11 trước 24H2 đã được viết nhưng **chưa chạy thử**.
 - Hồ lớn trên các màn hình có tỉ lệ thu phóng (DPI) khác nhau chưa chạy thử; một điểm ảnh của hồ sẽ to nhỏ khác nhau giữa các màn.
 - Bản macOS đã chạy tốt trên MacBook Pro M2 (macOS Tahoe 26.6.2); máy Mac Intel và macOS cũ hơn chưa chạy thử.
+- Quay clip lặp đã chạy thử trên Windows (WebView2 ở máy này không có HEVC nên ra H.264). Trên Mac, việc lưu clip từ cửa sổ cài đặt (WKWebView) và `mac/lockscreen-clip.sh` đã được viết nhưng **chưa chạy thử**; mẹo thay video Aerial là cách không chính thức, Apple có thể chặn ở bản macOS sau.
 - Bấm lên icon desktop cũng gọi cá tới đó (không phân biệt icon với chỗ trống).

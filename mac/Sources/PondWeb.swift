@@ -118,9 +118,13 @@ final class PondSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 }
 
-/// Opens links (GitHub, the upstream project) in the default browser, and
-/// reloads a page whose web process crashed.
-final class PondNavigator: NSObject, WKNavigationDelegate, WKUIDelegate {
+/// Opens links (GitHub, the upstream project) in the default browser, saves
+/// downloads (a recorded loop clip) to ~/Downloads, and reloads a page whose
+/// web process crashed.
+final class PondNavigator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
+    /// Where each download in progress is going, to show it in Finder once done.
+    private var destinations: [ObjectIdentifier: URL] = [:]
+
     func webView(
         _ webView: WKWebView,
         createWebViewWith configuration: WKWebViewConfiguration,
@@ -135,6 +139,54 @@ final class PondNavigator: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         webView.reload()
+    }
+
+    // MARK: Downloads
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        decisionHandler(navigationAction.shouldPerformDownload ? .download : .allow)
+    }
+
+    func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+        download.delegate = self
+    }
+
+    func download(
+        _ download: WKDownload,
+        decideDestinationUsing response: URLResponse,
+        suggestedFilename: String,
+        completionHandler: @escaping (URL?) -> Void
+    ) {
+        let folder = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+        let name = (suggestedFilename as NSString).deletingPathExtension
+        let ext = (suggestedFilename as NSString).pathExtension
+        // Never overwrite: "clip.mp4", then "clip 2.mp4", …
+        var url = folder.appendingPathComponent(suggestedFilename)
+        var copy = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = folder.appendingPathComponent(ext.isEmpty ? "\(name) \(copy)" : "\(name) \(copy).\(ext)")
+            copy += 1
+        }
+        destinations[ObjectIdentifier(download)] = url
+        completionHandler(url)
+    }
+
+    func downloadDidFinish(_ download: WKDownload) {
+        if let url = destinations.removeValue(forKey: ObjectIdentifier(download)) {
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+    }
+
+    func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
+        destinations.removeValue(forKey: ObjectIdentifier(download))
     }
 }
 
