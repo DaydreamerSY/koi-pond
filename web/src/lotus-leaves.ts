@@ -5,6 +5,7 @@ import {
   LOTUS_LEAVES,
 } from "./config";
 import type { LotusMotion } from "./lotus-motion";
+import { mergeShadows } from "./shadows";
 
 interface Point {
   x: number;
@@ -143,7 +144,7 @@ export class LotusLeavesPass {
   private readonly leafCenterColor = new THREE.Color();
   private readonly leafEdgeColorA = new THREE.Color();
   private readonly leafEdgeColorB = new THREE.Color();
-  private readonly shadowMaterial = new THREE.MeshBasicMaterial({
+  private readonly shadowMaterial = mergeShadows(new THREE.MeshBasicMaterial({
     color: LOTUS.shadow.color,
     opacity: LOTUS.shadow.opacity,
     transparent: true,
@@ -154,7 +155,7 @@ export class LotusLeavesPass {
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
-  });
+  }));
   private readonly leafMaterial = new THREE.MeshBasicMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,

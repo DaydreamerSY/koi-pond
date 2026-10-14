@@ -20,6 +20,7 @@ import {
   type RippleSystem,
   type RippleType,
 } from "./ripple-system";
+import { mergeShadows } from "./shadows";
 
 const MAX_DUCKWEED_RIPPLES = 32;
 // When more ripples are alive than fit in the uniform array, keep these first.
@@ -144,7 +145,7 @@ export class DuckweedPass {
   public readonly shadowGroup = new THREE.Group();
   public readonly group = new THREE.Group();
 
-  private readonly shadowMaterial = new THREE.MeshBasicMaterial({
+  private readonly shadowMaterial = mergeShadows(new THREE.MeshBasicMaterial({
     color: DUCKWEED.shadow.color,
     opacity: DUCKWEED.shadow.opacity,
     transparent: true,
@@ -155,7 +156,7 @@ export class DuckweedPass {
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
-  });
+  }));
   private readonly leafMaterial = new THREE.MeshBasicMaterial({
     vertexColors: true,
     side: THREE.DoubleSide,

@@ -33,6 +33,7 @@ import {
 } from "./math";
 import { PondBedPass } from "./pond-bed";
 import { School } from "./school";
+import { mergeShadows } from "./shadows";
 import { SurfaceDisturbancePass } from "./surface-disturbance";
 import { TinyFishRenderer } from "./tiny-fish-renderer";
 import { WaterSurfacePass } from "./water-surface";
@@ -253,10 +254,12 @@ export class FishRenderer {
   private readonly bedCritters = new BedCritterRenderer();
   private readonly duckRenderer = new DuckRenderer();
   private readonly frogRenderer = new FrogRenderer();
-  private readonly fishShadowMaterial = shadowMaterial(1);
+  private readonly fishShadowMaterial = mergeShadows(shadowMaterial(1));
   private readonly shadowTriangles: GeometryBatch;
-  private readonly outerTriangles: GeometryBatch;
-  private readonly bodyTriangles: GeometryBatch;
+  /** Every koi, one after another: each one's silhouette, then its markings and eyes. */
+  private readonly koiTriangles: GeometryBatch;
+  /** Koi indices in drawing order, deepest first. */
+  private readonly drawOrder: number[] = [];
   private readonly outlineLines: GeometryBatch;
   private readonly appearances = Array.from(
     { length: MAX_FISH },
@@ -296,19 +299,21 @@ export class FishRenderer {
     this.renderer.setClearColor(0x000000, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+    // Both passes keep a stencil buffer so overlapping shadows darken a spot
+    // only once (see shadows.ts); three only attaches one with a depth buffer.
     this.underwaterTarget = new THREE.WebGLRenderTarget(CANVAS_WIDTH, CANVAS_HEIGHT, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
-      depthBuffer: false,
-      stencilBuffer: false,
+      depthBuffer: true,
+      stencilBuffer: true,
     });
     this.underwaterTarget.texture.generateMipmaps = false;
 
     this.compositeTarget = new THREE.WebGLRenderTarget(CANVAS_WIDTH, CANVAS_HEIGHT, {
       minFilter: THREE.LinearFilter,
       magFilter: THREE.LinearFilter,
-      depthBuffer: false,
-      stencilBuffer: false,
+      depthBuffer: true,
+      stencilBuffer: true,
     });
     this.compositeTarget.texture.generateMipmaps = false;
 
@@ -325,7 +330,7 @@ export class FishRenderer {
       this.tinyFishRenderer.shadowGroup,
       this.duckRenderer.shadowGroup,
     );
-    this.fishScene.add(this.tinyFishRenderer.group);
+    this.fishScene.add(this.tinyFishRenderer.group, this.duckRenderer.underwaterGroup);
     this.surfaceScene.add(this.waterSurface.mesh);
     this.surfaceShadowScene.add(
       this.duckweed.shadowGroup,
@@ -341,30 +346,23 @@ export class FishRenderer {
     this.weatherScene.add(this.weather.mesh);
 
     const shadowGeometry = new THREE.BufferGeometry();
-    const whiteGeometry = new THREE.BufferGeometry();
-    const blackGeometry = new THREE.BufferGeometry();
+    const koiGeometry = new THREE.BufferGeometry();
     const lineGeometry = new THREE.BufferGeometry();
     shadowGeometry.name = "fish shadows";
-    whiteGeometry.name = "fish silhouettes";
-    blackGeometry.name = "fish markings";
+    koiGeometry.name = "koi";
     lineGeometry.name = "fish debug lines";
     this.shadowTriangles = new GeometryBatch(
       shadowGeometry,
       TRIANGLE_FLOAT_CAPACITY,
       true,
     );
-    this.outerTriangles = new GeometryBatch(whiteGeometry, TRIANGLE_FLOAT_CAPACITY, true);
-    this.bodyTriangles = new GeometryBatch(blackGeometry, TRIANGLE_FLOAT_CAPACITY, true);
+    // One mesh for silhouettes and markings together, so a koi swimming over
+    // another covers its markings too (two meshes drew every koi's markings
+    // over every koi's body).
+    this.koiTriangles = new GeometryBatch(koiGeometry, TRIANGLE_FLOAT_CAPACITY * 2, true);
     this.outlineLines = new GeometryBatch(lineGeometry, LINE_FLOAT_CAPACITY, true);
 
-    const outerMaterial = new THREE.MeshBasicMaterial({
-      vertexColors: true,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-      toneMapped: false,
-    });
-    const bodyMaterial = new THREE.MeshBasicMaterial({
+    const koiMaterial = new THREE.MeshBasicMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
       depthTest: false,
@@ -379,18 +377,15 @@ export class FishRenderer {
     });
 
     const shadowMesh = new THREE.Mesh(shadowGeometry, this.fishShadowMaterial);
-    const outerMesh = new THREE.Mesh(whiteGeometry, outerMaterial);
-    const bodyMesh = new THREE.Mesh(blackGeometry, bodyMaterial);
+    const koiMesh = new THREE.Mesh(koiGeometry, koiMaterial);
     const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
     shadowMesh.frustumCulled = false;
-    outerMesh.frustumCulled = false;
-    bodyMesh.frustumCulled = false;
+    koiMesh.frustumCulled = false;
     lines.frustumCulled = false;
-    outerMesh.renderOrder = 1;
-    bodyMesh.renderOrder = 2;
+    koiMesh.renderOrder = 1;
     lines.renderOrder = 3;
     this.fishShadowScene.add(shadowMesh);
-    this.fishScene.add(outerMesh, bodyMesh, lines);
+    this.fishScene.add(koiMesh, lines);
     this.refreshRenderSize();
   }
 
@@ -512,8 +507,7 @@ export class FishRenderer {
     }
     this.previousAppearanceTime = time;
     this.shadowTriangles.reset();
-    this.outerTriangles.reset();
-    this.bodyTriangles.reset();
+    this.koiTriangles.reset();
     this.outlineLines.reset();
 
     const previewIndex = this.previewFamilyIndex;
@@ -532,12 +526,20 @@ export class FishRenderer {
     const transformOrigin = previewIndex === null
       ? null
       : school.fish[selectedFishIndex].position;
-    for (const batch of [this.shadowTriangles, this.outerTriangles, this.bodyTriangles, this.outlineLines]) {
+    for (const batch of [this.shadowTriangles, this.koiTriangles, this.outlineLines]) {
       batch.setPreviewTransform(transformOrigin, previewIndex === null ? 1 : 1.6);
     }
 
+    // Deepest first, so a koi nearer the surface swims over one below it
+    // (and its darker shadow, drawn first, is the one that shows where
+    // shadows overlap).
+    const order = this.drawOrder;
+    order.length = 0;
     for (let index = 0; index < school.count; index += 1) {
-      if (previewIndex !== null && index !== selectedFishIndex) continue;
+      if (previewIndex === null || index === selectedFishIndex) order.push(index);
+    }
+    order.sort((a, b) => school.fish[b].depth - school.fish[a].depth);
+    for (const index of order) {
       const fish = school.fish[index];
       this.buildRenderSpine(fish);
       const appearanceIndex = previewIndex ?? index;
@@ -548,8 +550,7 @@ export class FishRenderer {
     }
 
     this.shadowTriangles.commit();
-    this.outerTriangles.commit();
-    this.bodyTriangles.commit();
+    this.koiTriangles.commit();
     this.outlineLines.commit();
     this.tinyFishRenderer.group.visible = previewIndex === null;
     this.tinyFishRenderer.shadowGroup.visible = previewIndex === null;
@@ -559,6 +560,7 @@ export class FishRenderer {
       this.bedCritters.group,
       this.duckRenderer.group,
       this.duckRenderer.shadowGroup,
+      this.duckRenderer.underwaterGroup,
       this.frogRenderer.group,
     ]) group.visible = previewIndex === null;
     if (previewIndex === null) {
@@ -728,12 +730,12 @@ export class FishRenderer {
     color: THREE.Color,
   ): void {
     this.addShadowTriangle(a, b, c);
-    this.outerTriangles.triangle(a, b, c, color);
+    this.koiTriangles.triangle(a, b, c, color);
   }
 
   private silhouetteCircle(center: Vec2, radius: number, color: THREE.Color): void {
     this.addShadowCircle(center, radius);
-    this.outerTriangles.circle(center, radius, color);
+    this.koiTriangles.circle(center, radius, color);
   }
 
   private drawKoi(fish: Koi, appearance: FishAppearance): void {
@@ -907,7 +909,7 @@ export class FishRenderer {
       const patchColor =
         patch.color === "accent" ? appearance.accent : appearance.marking;
 
-      this.bodyTriangles.ellipse(
+      this.koiTriangles.ellipse(
         patchCenter,
         forward,
         normal,
@@ -924,13 +926,13 @@ export class FishRenderer {
     );
     const eyeOffset = this.widthAt(fish, 0) * 0.58;
     const eyeRadius = Math.max(0.58, fish.bodyWidth * 0.11);
-    this.bodyTriangles.circle(
+    this.koiTriangles.circle(
       add(eyeAnchor, mul(headNormal, eyeOffset)),
       eyeRadius,
       appearance.eye,
       6,
     );
-    this.bodyTriangles.circle(
+    this.koiTriangles.circle(
       add(eyeAnchor, mul(headNormal, -eyeOffset)),
       eyeRadius,
       appearance.eye,

@@ -521,14 +521,16 @@ const ripples = group(
       // The crests of the V-shaped wake behind a swimming duck or koi (see
       // wakeShape). A swimmer too slow for a V leaves plain rings instead.
       wake: rippleType({
-        maximumActive: 56, ripplesPerEvent: 1, intervalSeconds: 0.1, initialStrength: 0.42,
+        maximumActive: 56, ripplesPerEvent: 1, intervalSeconds: 0.1, initialStrength: 0.6,
         strengthFalloff: 0.7, lifetime: 3, startRadius: 2, expansionSpeed: 12,
-        distortion: 6.5, bandSharpness: 0.55, fadeStart: 0.2, strengthDecay: 0.5,
+        distortion: 7, bandSharpness: 0.55, fadeStart: 0.2, strengthDecay: 0.5,
       }),
     }),
     // A moving swimmer's wake: each crest spreads at speed × sin(halfAngle)
     // and shows only where it touches the arms of the V, so the crests left
     // along the way line up into a V (a Kelvin wake is about 19.5° each side).
+    // It shows only by how it ruffles the water, like a speedboat's wake:
+    // the water bends, and its little waves catch light and shade.
     wakeShape: group({
       halfAngle: num({
         default: 19.5, min: 5, max: 60, step: 0.5, unit: "°",
@@ -542,9 +544,13 @@ const ripples = group(
         default: 1.2, min: 0, max: 30, step: 0.1, unit: "px/s",
         description: "A swimmer whose crests would spread slower than this is barely moving: it leaves plain rings instead of a V.",
       }),
-      highlight: rgb({
-        default: [0.12, 0.16, 0.14], min: 0, max: 0.5, step: 0.001,
-        description: "Light the wake's crests catch, added to the water so the V shows on calm water (0 = only the ripple's bend).",
+      waveLength: num({
+        default: 6, min: 1, max: 20, step: 0.1, unit: "px",
+        description: "Each crest is a short train of little waves this far apart; they ruffle the water along the V.",
+      }),
+      shading: num({
+        default: 0.45, min: 0, max: 1, step: 0.01,
+        description: "How much light and shade the little waves catch: lighter and darker bands along the V, like a boat's wake (0 = only the bend of the water).",
       }),
     }),
     rainEmitter: group({

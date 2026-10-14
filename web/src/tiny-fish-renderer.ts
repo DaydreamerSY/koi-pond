@@ -3,6 +3,7 @@ import { TINY_FISH } from "./config";
 import { add, mul, normalize, perpendicular, type Vec2 } from "./math";
 import { SurfaceGeometryBatch } from "./surface-geometry";
 import { TinyFishSchools, type TinyFishAgent } from "./tiny-fish";
+import { mergeShadows } from "./shadows";
 
 interface TinyFishPalette {
   body: THREE.Color;
@@ -29,7 +30,7 @@ export class TinyFishRenderer {
   private readonly shadowGeometry = new THREE.BufferGeometry();
   private readonly shapeGeometry = new THREE.BufferGeometry();
   private readonly detailGeometry = new THREE.BufferGeometry();
-  private readonly shadowMaterial = new THREE.MeshBasicMaterial({
+  private readonly shadowMaterial = mergeShadows(new THREE.MeshBasicMaterial({
     color: TINY_FISH.shadow.color,
     opacity: TINY_FISH.shadow.opacity,
     transparent: true,
@@ -40,7 +41,7 @@ export class TinyFishRenderer {
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
-  });
+  }));
   private readonly shadowBatch = new SurfaceGeometryBatch(
     this.shadowGeometry,
     16_384,

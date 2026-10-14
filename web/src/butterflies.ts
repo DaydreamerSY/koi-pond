@@ -14,6 +14,7 @@ import {
   SurfaceGeometryBatch,
   type SurfacePoint,
 } from "./surface-geometry";
+import { mergeShadows } from "./shadows";
 
 type ButterflyState = "wander" | "approach" | "orbit" | "rest";
 
@@ -92,7 +93,7 @@ export class ButterflyPass {
     1_024,
     true,
   );
-  private readonly shadowMaterial = new THREE.MeshBasicMaterial({
+  private readonly shadowMaterial = mergeShadows(new THREE.MeshBasicMaterial({
     color: BUTTERFLIES.shadow.color,
     opacity: BUTTERFLIES.shadow.opacity,
     transparent: true,
@@ -103,7 +104,7 @@ export class ButterflyPass {
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
-  });
+  }));
   private butterflies: Butterfly[] = [];
   private lastTime = -1;
   private lotus: LotusMotion | null = null;

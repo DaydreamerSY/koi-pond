@@ -3,6 +3,7 @@ import { DUCKS, type DuckPaletteSetting } from "./config";
 import { duckSize, tailWag, type Duck } from "./ducks";
 import { add, fromAngle, mul, perpendicular, sub, type Vec2 } from "./math";
 import { tintForDepth } from "./pond-layout";
+import { mergeShadows } from "./shadows";
 import { SurfaceGeometryBatch } from "./surface-geometry";
 
 const EYE_COLOR = 0x161412;
@@ -14,24 +15,28 @@ function rotate(vector: Vec2, angle: number): Vec2 {
   return { x: vector.x * cosine - vector.y * sine, y: vector.x * sine + vector.y * cosine };
 }
 
-/** A duck this far under is out of sight. */
-const OUT_OF_SIGHT = 0.97;
+/** A diving duck this far under is drawn below the water, with the koi. */
+const UNDERWATER = 0.5;
 
 /**
  * Ducks seen from above, drawn on the water surface. Like lotus leaves, they
  * float, so their shadow falls on the pond bed (`shadowGroup` goes in the
- * underwater shadow scene). A diving duck sinks from view, tinted like the
- * water, and is gone while it swims underwater.
+ * underwater shadow scene). A diving duck darkens as it sinks and, once
+ * under, is drawn below the water like a koi (`underwaterGroup` goes in the
+ * underwater fish scene), seen through the ripples and currents.
  */
 export class DuckRenderer {
   public readonly shadowGroup = new THREE.Group();
   public readonly group = new THREE.Group();
+  public readonly underwaterGroup = new THREE.Group();
 
   private readonly shadowGeometry = new THREE.BufferGeometry();
   private readonly shapeGeometry = new THREE.BufferGeometry();
+  private readonly underwaterGeometry = new THREE.BufferGeometry();
   private readonly shadowBatch = new SurfaceGeometryBatch(this.shadowGeometry, 8_192);
   private readonly shapeBatch = new SurfaceGeometryBatch(this.shapeGeometry, 65_536, true);
-  private readonly shadowMaterial = new THREE.MeshBasicMaterial({
+  private readonly underwaterBatch = new SurfaceGeometryBatch(this.underwaterGeometry, 16_384, true);
+  private readonly shadowMaterial = mergeShadows(new THREE.MeshBasicMaterial({
     transparent: true,
     side: THREE.DoubleSide,
     // One flat color, so a single pass looks the same as three's
@@ -40,7 +45,7 @@ export class DuckRenderer {
     depthTest: false,
     depthWrite: false,
     toneMapped: false,
-  });
+  }));
   private readonly colors = {
     body: new THREE.Color(),
     wing: new THREE.Color(),
@@ -56,24 +61,28 @@ export class DuckRenderer {
   public constructor() {
     this.shadowGeometry.name = "duck shadows";
     this.shapeGeometry.name = "ducks";
+    this.underwaterGeometry.name = "diving ducks";
+    const shapeMaterial = new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      depthTest: false,
+      depthWrite: false,
+      toneMapped: false,
+    });
     const shadowMesh = new THREE.Mesh(this.shadowGeometry, this.shadowMaterial);
-    const shapeMesh = new THREE.Mesh(
-      this.shapeGeometry,
-      new THREE.MeshBasicMaterial({
-        vertexColors: true,
-        side: THREE.DoubleSide,
-        depthTest: false,
-        depthWrite: false,
-        toneMapped: false,
-      }),
-    );
+    const shapeMesh = new THREE.Mesh(this.shapeGeometry, shapeMaterial);
+    const underwaterMesh = new THREE.Mesh(this.underwaterGeometry, shapeMaterial);
     shadowMesh.frustumCulled = false;
     shapeMesh.frustumCulled = false;
+    underwaterMesh.frustumCulled = false;
     shadowMesh.renderOrder = 2;
     // Above lotus leaves and flowers (1–3), below butterflies (10).
     shapeMesh.renderOrder = 6;
+    // Below the koi (1–3): a diving duck stays fairly deep.
+    underwaterMesh.renderOrder = 0;
     this.shadowGroup.add(shadowMesh);
     this.group.add(shapeMesh);
+    this.underwaterGroup.add(underwaterMesh);
   }
 
   public update(ducks: readonly Duck[], time: number): void {
@@ -81,12 +90,14 @@ export class DuckRenderer {
     this.shadowMaterial.opacity = DUCKS.shadow.opacity;
     this.shadowBatch.reset();
     this.shapeBatch.reset();
+    this.underwaterBatch.reset();
     // Feet are underwater, below every duck; ducklings go under the adults.
     for (const duck of ducks) this.drawFeet(duck);
     for (const duck of ducks) if (duck.duckling) this.drawDuck(duck, time);
     for (const duck of ducks) if (!duck.duckling) this.drawDuck(duck, time);
     this.shadowBatch.commit();
     this.shapeBatch.commit();
+    this.underwaterBatch.commit();
   }
 
   private paletteOf(duck: Duck): Omit<DuckPaletteSetting, "name"> | undefined {
@@ -111,7 +122,8 @@ export class DuckRenderer {
 
   private setColors(source: Omit<DuckPaletteSetting, "name">, headDip: number, submerged: number): void {
     const c = this.colors;
-    // Sinking on a dive, the whole duck takes on the water's tint.
+    // Sinking on a dive, the whole duck darkens with the water's tint, as a
+    // koi does going deep.
     const under = submerged * 0.85;
     tintForDepth(source.body, under, c.body);
     tintForDepth(source.wing, under, c.wing);
@@ -126,13 +138,13 @@ export class DuckRenderer {
 
   private drawDuck(duck: Duck, time: number): void {
     const palette = this.paletteOf(duck);
-    if (!palette || duck.submerged >= OUT_OF_SIGHT) return;
+    if (!palette) return;
     this.setColors(palette, duck.headDip, duck.submerged);
     const c = this.colors;
-    const batch = this.shapeBatch;
+    const batch = duck.submerged >= UNDERWATER ? this.underwaterBatch : this.shapeBatch;
 
     const size = duckSize(duck);
-    // A little smaller as it sinks out of sight.
+    // A little smaller the deeper it goes.
     const shrink = 1 - duck.submerged * 0.2;
     const length = size.length * shrink;
     const width = size.width * shrink;
@@ -141,10 +153,9 @@ export class DuckRenderer {
     const at = (along: number, across: number): Vec2 =>
       add(add(duck.position, mul(forward, length * along)), mul(side, width * across));
 
-    // Shadow on the pond bed (gone once the duck is under).
-    const afloat = 1 - duck.submerged;
-    const shadowCenter = add(duck.position, DUCKS.shadow.offset);
-    if (afloat > 0.05) this.shadowBatch.ellipse(shadowCenter, forward, side, length * 0.56 * afloat, width * 0.52 * afloat, undefined, 12);
+    // Shadow on the pond bed, closer under the duck as it dives toward it.
+    const shadowCenter = add(duck.position, mul(DUCKS.shadow.offset, 1 - duck.submerged * 0.45));
+    this.shadowBatch.ellipse(shadowCenter, forward, side, length * 0.56, width * 0.52, undefined, 12);
 
     // Wings spread while flapping off in a hurry.
     if (duck.flap > 0.02) {

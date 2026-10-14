@@ -5,6 +5,7 @@ import { add, fromAngle, mul, perpendicular, type Vec2 } from "./math";
 import { tintForDepth } from "./pond-layout";
 import type { Shrimp } from "./shrimp";
 import { SurfaceGeometryBatch } from "./surface-geometry";
+import { mergeShadows } from "./shadows";
 
 const SHADOW_COLOR = 0x0b211e;
 
@@ -87,7 +88,7 @@ export class BedCritterRenderer {
   }
 
   private shadowMaterial(): THREE.MeshBasicMaterial {
-    return new THREE.MeshBasicMaterial({
+    return mergeShadows(new THREE.MeshBasicMaterial({
       color: SHADOW_COLOR,
       transparent: true,
       side: THREE.DoubleSide,
@@ -97,7 +98,7 @@ export class BedCritterRenderer {
       depthTest: false,
       depthWrite: false,
       toneMapped: false,
-    });
+    }));
   }
 
   private drawCrab(crab: Crab, time: number): void {

@@ -60,8 +60,8 @@ export interface Duck {
 
 const DIP_SECONDS = 0.8;
 const DIP_CYCLE = 1.15;
-/** Tipping forward and slipping under, at the start of a dive. */
-const DIVE_DOWN_SECONDS = 0.7;
+/** Tipping the head under, then slipping under after it, at the start of a dive. */
+const DIVE_DOWN_SECONDS = 1.1;
 /** Bobbing back up, then a shake of the tail. */
 const SURFACE_SECONDS = 1.3;
 const WAG_SECONDS = 0.75;
@@ -312,15 +312,16 @@ export class DuckFamilies {
         }
         break;
       case "dive": {
-        // Tip forward and slip under, swim over underwater, then come up there.
+        // Head under first, then the body follows; swim over underwater
+        // (seen below the surface, like a koi), then come up there.
         headDip = 1;
         goal = duck.target;
         if (duck.stateAge < DIVE_DOWN_SECONDS) {
-          duck.submerged = smoothstep(0.2, DIVE_DOWN_SECONDS, duck.stateAge);
+          duck.submerged = smoothstep(0.45, DIVE_DOWN_SECONDS, duck.stateAge);
           targetSpeed = duck.cruiseSpeed * 0.5;
           if (duck.submerged > 0.5 && !duck.dipRippled) {
             duck.dipRippled = true;
-            ripples.trigger("rain", duck.position, 0.8);
+            ripples.trigger("rain", duck.position, 0.45);
           }
           break;
         }
@@ -337,7 +338,7 @@ export class DuckFamilies {
         }
         if (distance < 3 || duck.stateAge >= duck.stateDuration) {
           this.begin(duck, "surface", SURFACE_SECONDS);
-          ripples.trigger("rain", duck.position, 0.9);
+          ripples.trigger("rain", duck.position, 0.5);
         }
         break;
       }
