@@ -43,9 +43,8 @@ const fragmentShader = /* glsl */ `
   uniform vec4 uRipples[MAX_RIPPLES];
   // Per ripple: wake heading (xy), spread speed (z), 1 for a wake crest (w).
   uniform vec4 uRippleMotion[MAX_RIPPLES];
-  // sin(V half-angle), crest arc width, wave number of the little waves in a
-  // crest, and how much light and shade those waves catch.
-  uniform vec4 uWakeShape;
+  // sin(V half-angle), crest arc width.
+  uniform vec2 uWakeShape;
   uniform vec4 uRipplePhysics[MAX_RIPPLE_TYPES];
   uniform vec4 uRippleCurves[MAX_RIPPLE_TYPES];
   uniform vec3 uColorTint;
@@ -202,7 +201,6 @@ const fragmentShader = /* glsl */ `
 
   void main() {
     vec2 pixel = vec2(vUv.x * uResolution.x, (1.0 - vUv.y) * uResolution.y);
-    float wakeShade = 0.0;
     vec2 displacement = vec2(
       sin(pixel.y * 0.051 + uTime * 0.31) + sin(pixel.y * 0.017 - uTime * 0.19),
       cos(pixel.x * 0.043 - uTime * 0.23) + sin(pixel.x * 0.014 + uTime * 0.16)
@@ -237,22 +235,12 @@ const fragmentShader = /* glsl */ `
         * (1.0 - life * curves.z);
       float direction = signedDistance < 0.0 ? -1.0 : 1.0;
       if (motion.w > 0.5) {
-        // A wake crest only shows where it lies on the arms of the swimmer's
-        // V, and it's a short train of little waves rather than one ring, so
-        // the water along the arms looks ruffled, like behind a speedboat.
-        // It builds up over its first moments, so the V shows once its arms
-        // are clear of the swimmer instead of scrambling the koi itself.
+        // A wake crest is a ripple like a click's, showing around where it
+        // lies on the arms of the swimmer's V. It builds up over its first
+        // moments, so the V shows once it's clear of the swimmer instead of
+        // scrambling the koi itself.
         float arcOffset = (dot(radial, motion.xy) - uWakeShape.x) / uWakeShape.y;
-        distortionBand =
-          exp(-abs(signedDistance) * curves.x * 0.5)
-          * fade
-          * strength
-          * (1.0 - life * curves.z)
-          * exp(-arcOffset * arcOffset)
-          * smoothstep(0.2, 0.7, ripple.z);
-        direction = sin(signedDistance * uWakeShape.z);
-        // Each little wave is lit on one face and shaded on the other.
-        wakeShade += distortionBand * cos(signedDistance * uWakeShape.z);
+        distortionBand *= exp(-arcOffset * arcOffset) * smoothstep(0.2, 0.7, ripple.z);
       }
 
       displacement +=
@@ -276,9 +264,6 @@ const fragmentShader = /* glsl */ `
     );
 
     color *= uColorTint;
-    // Lighter and darker bands where a wake's waves ruffle the water; no
-    // color of their own, and the water's average brightness stays the same.
-    color *= 1.0 + clamp(wakeShade, -1.0, 1.0) * uWakeShape.w;
 
     if (uShowCurrentEffect > 0.5) {
       vec2 largeWavePixel = directionalWavePixel(
@@ -452,7 +437,7 @@ export class WaterSurfacePass {
         uRippleCount: { value: 0 },
         uRipples: { value: this.rippleData },
         uRippleMotion: { value: this.rippleMotion },
-        uWakeShape: { value: new THREE.Vector4(1 / 3, 0.3, 1, 0) },
+        uWakeShape: { value: new THREE.Vector2(0.5, 0.6) },
         uRipplePhysics: { value: this.ripplePhysics },
         uRippleCurves: { value: this.rippleCurves },
         uColorTint: { value: new THREE.Color() },
@@ -551,8 +536,6 @@ export class WaterSurfacePass {
     this.material.uniforms.uWakeShape.value.set(
       Math.sin((RIPPLES.wakeShape.halfAngle * Math.PI) / 180),
       Math.max(RIPPLES.wakeShape.arcWidth, 0.01),
-      (Math.PI * 2) / Math.max(RIPPLES.wakeShape.waveLength, 0.5),
-      RIPPLES.wakeShape.shading,
     );
     this.material.uniforms.uTime.value = time;
     this.material.uniforms.uRippleCount.value = activeCount;

@@ -247,24 +247,26 @@ export class School {
   }
 
   /**
-   * A koi swimming just under the surface parts the water: a V-shaped wake
-   * opens behind its head, like a duck's, stronger the shallower and faster
-   * it goes.
+   * A koi dashing along just under the surface (a burst, a rush to a click)
+   * parts the water: a long V-shaped wake opens behind its head, stronger the
+   * shallower and faster it goes. Cruising or idling, it leaves none.
    */
   private updateWake(fish: Koi, dt: number): void {
     const wake = FISH.wake;
     const shallowness = 1 - fish.depth / Math.max(wake.depth, 0.001);
-    if (shallowness <= 0 || fish.speed < wake.minimumSpeed) {
+    const pace = fish.speed / Math.max(fish.cruiseSpeed, 0.001);
+    // Fades in over the first quarter above the threshold rather than popping on.
+    const haste = clamp((pace - wake.fastPace) / Math.max(wake.fastPace * 0.25, 0.01), 0, 1);
+    if (shallowness <= 0 || haste <= 0) {
       fish.wakeCountdown = Math.min(fish.wakeCountdown, wake.interval);
       return;
     }
-    const pace = clamp(fish.speed / Math.max(fish.cruiseSpeed, 0.001), 0.4, 2.5);
-    fish.wakeCountdown -= dt * pace;
+    fish.wakeCountdown -= dt * Math.min(pace, 3);
     if (fish.wakeCountdown > 0) return;
     fish.wakeCountdown = wake.interval;
     // The V opens from just behind the head, where the water first parts.
     const bow = fish.spine[Math.round((SPINE_NODES - 1) * 0.15)];
-    this.ripples.triggerWake(bow, fish.heading, fish.speed, Math.min(1.6, shallowness * wake.strength * Math.min(pace, 1.6)));
+    this.ripples.triggerWake(bow, fish.heading, fish.speed, Math.min(1.6, shallowness * wake.strength * haste));
   }
 
   private updateFeeding(fish: Koi, dt: number): void {

@@ -78,18 +78,13 @@ export class RippleSystem {
 
   /**
    * One crest of the wake behind a swimmer at `point`, heading `heading` at
-   * `speed`. Each crest spreads at speed × sin(halfAngle) and shows only where
-   * it touches the arms of the V, so the crests left along the way line up
-   * into a V behind the swimmer (a Kelvin wake). Too slow for that, it's a
-   * plain ring.
+   * `speed` (only fast swimmers leave one; the callers decide). Each crest
+   * spreads at speed × sin(halfAngle) and shows around where it touches the
+   * arms of the V, so the crests left along the way line up into a V behind
+   * the swimmer that keeps spreading out.
    */
   public triggerWake(point: Vec2, heading: number, speed: number, strength = 1): void {
-    const shape = RIPPLES.wakeShape;
-    const spread = speed * Math.sin((shape.halfAngle * Math.PI) / 180);
-    if (spread < shape.minimumSpread) {
-      this.emit("wake", point, strength, Math.max(shape.minimumSpread, 0.5), 0, 0);
-      return;
-    }
+    const spread = speed * Math.sin((RIPPLES.wakeShape.halfAngle * Math.PI) / 180);
     this.emit("wake", point, strength, spread, Math.cos(heading), Math.sin(heading));
   }
 

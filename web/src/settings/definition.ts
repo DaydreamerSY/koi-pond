@@ -241,15 +241,19 @@ const koi = group(
         description: "A holding koi still drifts at this share of its cruise speed.",
       }),
     }),
-    // A koi swimming just under the surface parts the water: a V-shaped wake
-    // trails behind it, like a duck's.
+    // A koi dashing along just under the surface (a burst, a rush to a click)
+    // parts the water: a long V-shaped wake spreads out behind it. A koi
+    // cruising or idling leaves none.
     wake: group({
       depth: num({
         default: 0.16, min: 0, max: 1, step: 0.01,
         description: "Koi shallower than this leave a wake (0 = at the surface); the shallower, the stronger.",
       }),
-      interval: num({ default: 0.2, min: 0.05, max: 3, step: 0.01, unit: "s", description: "Time between wake crests at cruising speed; the crests line up into the V." }),
-      minimumSpeed: num({ default: 4, min: 0, max: 60, step: 0.5, unit: "px/s", description: "Slower than this, a koi leaves no wake." }),
+      interval: num({ default: 0.35, min: 0.05, max: 3, step: 0.01, unit: "s", description: "Time between wake crests at cruising pace (shorter the faster it goes); the crests line up into the V." }),
+      fastPace: num({
+        default: 1.35, min: 0, max: 5, step: 0.05,
+        description: "A koi leaves a wake only when swimming faster than this many times its cruising speed: bursts and dashes for food, not cruising.",
+      }),
       strength: num({ default: 0.9, min: 0, max: 2, step: 0.05, description: "How strong a koi's wake is next to a duck's (1 = the same)." }),
     }),
     feeding: group({
@@ -518,39 +522,26 @@ const ripples = group(
         strengthFalloff: 0.65, lifetime: 0.9, startRadius: 1.2, expansionSpeed: 17,
         distortion: 10.4, bandSharpness: 0.7, fadeStart: 0.25, strengthDecay: 0.45,
       }),
-      // The crests of the V-shaped wake behind a swimming duck or koi (see
-      // wakeShape). A swimmer too slow for a V leaves plain rings instead.
+      // The crests of the V-shaped wake behind a duck or koi dashing across
+      // the water (see wakeShape): ripples like a click's, spreading out.
       wake: rippleType({
-        maximumActive: 56, ripplesPerEvent: 1, intervalSeconds: 0.1, initialStrength: 0.6,
-        strengthFalloff: 0.7, lifetime: 3, startRadius: 2, expansionSpeed: 12,
-        distortion: 7, bandSharpness: 0.55, fadeStart: 0.2, strengthDecay: 0.5,
+        maximumActive: 64, ripplesPerEvent: 1, intervalSeconds: 0.06, initialStrength: 1.3,
+        strengthFalloff: 0.8, lifetime: 3.2, startRadius: 3, expansionSpeed: 12,
+        distortion: 7, bandSharpness: 0.3, fadeStart: 0.55, strengthDecay: 0.2,
       }),
     }),
-    // A moving swimmer's wake: each crest spreads at speed × sin(halfAngle)
-    // and shows only where it touches the arms of the V, so the crests left
-    // along the way line up into a V (a Kelvin wake is about 19.5° each side).
-    // It shows only by how it ruffles the water, like a speedboat's wake:
-    // the water bends, and its little waves catch light and shade.
+    // A fast swimmer's wake: rings like a click's, left along its path. Each
+    // spreads at speed × sin(halfAngle), slower than the swimmer, so together
+    // they trail behind it in a long V that keeps spreading; each shows most
+    // where it lies on the V's arms and fades toward the swimmer's path.
     wakeShape: group({
       halfAngle: num({
-        default: 19.5, min: 5, max: 60, step: 0.5, unit: "°",
-        description: "How wide the V behind a swimmer opens, each side of its path.",
+        default: 35, min: 5, max: 60, step: 0.5, unit: "°",
+        description: "How wide the V behind a swimmer opens, each side of its path (the crests spread at speed × sin of this).",
       }),
       arcWidth: num({
-        default: 0.35, min: 0.05, max: 1, step: 0.01,
-        description: "How long each crest is along the V's arms (larger blurs the V toward rings).",
-      }),
-      minimumSpread: num({
-        default: 1.2, min: 0, max: 30, step: 0.1, unit: "px/s",
-        description: "A swimmer whose crests would spread slower than this is barely moving: it leaves plain rings instead of a V.",
-      }),
-      waveLength: num({
-        default: 6, min: 1, max: 20, step: 0.1, unit: "px",
-        description: "Each crest is a short train of little waves this far apart; they ruffle the water along the V.",
-      }),
-      shading: num({
-        default: 0.45, min: 0, max: 1, step: 0.01,
-        description: "How much light and shade the little waves catch: lighter and darker bands along the V, like a boat's wake (0 = only the bend of the water).",
+        default: 1.2, min: 0.05, max: 3, step: 0.01,
+        description: "How far round each ring shows beyond the V's arms (smaller keeps just the arms, larger shows full rings).",
       }),
     }),
     rainEmitter: group({
@@ -1139,7 +1130,11 @@ const ducks = group(
     restDuration: range({ default: [2.5, 7], min: 0, max: 60, step: 0.5 }),
     dabbleChance: num({ default: 0.35, min: 0, max: 1, step: 0.01, description: "Chance to tip the head under for food after paddling." }),
     preenChance: num({ default: 0.25, min: 0, max: 1, step: 0.01, description: "Chance to stop and preen after paddling." }),
-    wakeInterval: num({ default: 0.3, min: 0.05, max: 3, step: 0.01, unit: "s", description: "Time between wake crests while paddling." }),
+    wakeSpeed: num({
+      default: 12, min: 0, max: 100, step: 0.5, unit: "px/s",
+      description: "A duck leaves a V-shaped wake only faster than this: hurrying to food or fleeing, not paddling about.",
+    }),
+    wakeInterval: num({ default: 0.45, min: 0.05, max: 3, step: 0.01, unit: "s", description: "Time between wake crests (shorter the faster the duck goes)." }),
     shadow: group({
       color: color({ default: 0x0a2b26 }),
       opacity: num({ default: 0.42, min: 0, max: 1, step: 0.01 }),

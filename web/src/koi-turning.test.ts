@@ -158,11 +158,11 @@ describe("koi swimming and turning", () => {
     expect(cruising).toBeGreaterThan(holding + 0.15);
   });
 
-  it("leaves a V-shaped wake from its head when swimming just under the surface, but not when deep", () => {
-    const wakesBehind = (depth: number): number => {
+  it("leaves a V-shaped wake from its head when dashing just under the surface, but not when deep or only cruising", () => {
+    const wakesBehind = (depth: number, state = SwimState.Burst): number => {
       const school = lone();
       const fish = school.fish[0];
-      fish.state = SwimState.Glide;
+      fish.state = state;
       fish.stateAge = 0;
       fish.stateDuration = 999;
       let time = 0;
@@ -184,6 +184,7 @@ describe("koi swimming and turning", () => {
     };
     expect(wakesBehind(0.04)).toBeGreaterThan(4);
     expect(wakesBehind(0.6)).toBe(0);
+    expect(wakesBehind(0.04, SwimState.Glide)).toBe(0);
   });
 
   it("sways like a fish, not an eel: the front of the body stays nearly still", () => {

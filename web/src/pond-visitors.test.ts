@@ -271,11 +271,23 @@ describe("ducks", () => {
     expect(worst).toBeGreaterThan(0.9);
   });
 
-  it("leave a wake while paddling", () => {
+  it("leave a wake only when in a hurry, not paddling about", () => {
     const { lotus, ripples } = pond();
     const families = new DuckFamilies(lotus);
-    run(5, (dt) => families.update(dt, ripples));
-    expect(ripples.instances.some((ripple) => ripple.alive && ripple.type === "wake")).toBe(true);
+    const wakes = (): number => ripples.instances.filter((ripple) => ripple.alive && ripple.type === "wake").length;
+    const time = run(5, (dt) => {
+      for (const duck of families.ducks) if (!duck.duckling) duck.stateAge = 0;
+      families.update(dt, ripples);
+      ripples.update(dt);
+    });
+    expect(families.ducks.every((duck) => duck.speed < DUCKS.wakeSpeed)).toBe(true);
+    expect(wakes()).toBe(0);
+    families.scatter();
+    run(1.5, (dt) => {
+      families.update(dt, ripples);
+      ripples.update(dt);
+    }, time);
+    expect(wakes()).toBeGreaterThan(2);
   });
 });
 
@@ -289,12 +301,14 @@ describe("wakes", () => {
       const distance = length(delta);
       const band = Math.exp(-Math.abs(distance - rippleRadius(ripple)) * RIPPLES.types[ripple.type].bandSharpness);
       const arc = distance > 0.001 ? rippleArc(ripple, delta.x / distance, delta.y / distance) : 1;
-      total += band * arc * ripple.strength;
+      // The water shader lets each crest build up over its first 0.2–0.7 s.
+      const t = Math.min(Math.max((ripple.age - 0.2) / 0.5, 0), 1);
+      total += band * arc * ripple.strength * t * t * (3 - 2 * t);
     }
     return total;
   }
 
-  it("trail a V behind a swimmer, not rings", () => {
+  it("trail a V of spreading ripples behind a swimmer, with nothing outside it or ahead", () => {
     const ripples = new RippleSystem();
     const speed = 24;
     const position = { x: 60, y: 135 };
@@ -310,36 +324,30 @@ describe("wakes", () => {
     });
     const half = (RIPPLES.wakeShape.halfAngle * Math.PI) / 180;
     let arms = 0;
-    let middle = 0;
-    let wide = 0;
+    let outside = 0;
     for (const back of [15, 20, 25]) {
       for (const sign of [-1, 1]) {
         // Along the arms of the V...
         arms += wakeAt(ripples, { x: position.x - back * Math.cos(half), y: position.y + sign * back * Math.sin(half) });
-        // ...not well outside them, where rings would also reach...
-        wide += wakeAt(ripples, { x: position.x - back * Math.cos(half * 2.6), y: position.y + sign * back * Math.sin(half * 2.6) });
+        // ...not well outside them.
+        outside += wakeAt(ripples, { x: position.x - back * Math.cos(half * 2), y: position.y + sign * back * Math.sin(half * 2) });
       }
-      // ...nor straight behind the swimmer.
-      middle += wakeAt(ripples, { x: position.x - back, y: position.y }) * 2;
     }
-    expect(arms).toBeGreaterThan(middle * 3);
-    expect(arms).toBeGreaterThan(wide * 2.5);
+    expect(arms).toBeGreaterThan(outside * 3);
     // Nothing ahead of the swimmer.
     expect(wakeAt(ripples, { x: position.x + 8, y: position.y })).toBeLessThan(arms * 0.02);
   });
 
-  it("spread each crest at the swimmer's speed × sin(half-angle), or ring plainly when too slow for a V", () => {
+  it("spread each crest at the swimmer's speed × sin(half-angle)", () => {
     const ripples = new RippleSystem();
     ripples.triggerWake({ x: 100, y: 100 }, 0.5, 30);
     const crest = ripples.instances.find((ripple) => ripple.alive)!;
     expect(crest.spread).toBeCloseTo(30 * Math.sin((RIPPLES.wakeShape.halfAngle * Math.PI) / 180), 5);
     expect(Math.hypot(crest.directionX, crest.directionY)).toBeCloseTo(1, 5);
-    ripples.reset();
-    ripples.triggerWake({ x: 100, y: 100 }, 0.5, 1);
-    const ring = ripples.instances.find((ripple) => ripple.alive)!;
-    expect(ring.directionX).toBe(0);
-    expect(ring.directionY).toBe(0);
-    expect(rippleArc(ring, 1, 0)).toBe(1);
+    // A click's ripple rings all round.
+    ripples.trigger("touch", { x: 100, y: 100 });
+    const ring = ripples.instances.find((ripple) => ripple.alive && ripple.type === "touch")!;
+    expect(rippleArc(ring, -1, 0)).toBe(1);
   });
 });
 
