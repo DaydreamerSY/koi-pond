@@ -671,8 +671,9 @@ export class DuckFamilies {
   }
 
   /**
-   * A V-shaped wake opening from the duck's breast when she's in a hurry (to
-   * food, or away from a fright); paddling about, she leaves none.
+   * A V-shaped wake when she's in a hurry (to food, or away from a fright):
+   * ripples parting from her body to either side; paddling about, she leaves
+   * none.
    */
   private paddleWake(duck: Duck, dt: number, ripples: RippleSystem): void {
     // Fades in over the first quarter above the threshold rather than popping on.
@@ -681,7 +682,7 @@ export class DuckFamilies {
     duck.wakeCountdown -= dt * clamp(duck.speed / DUCKS.wakeSpeed, 1, 2.5);
     if (duck.wakeCountdown > 0) return;
     duck.wakeCountdown = DUCKS.wakeInterval;
-    ripples.triggerWake(add(duck.position, mul(fromAngle(duck.heading), duckRadius(duck) * 0.5)), duck.heading, duck.speed, haste);
+    ripples.triggerWake(duck.position, duck.heading, duck.speed, haste);
   }
 
   /** The leaves as they float right now. */

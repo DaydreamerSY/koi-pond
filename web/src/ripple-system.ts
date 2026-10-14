@@ -29,15 +29,11 @@ export function rippleRadius(ripple: RippleInstance): number {
 /**
  * How much of a ripple shows in the direction (x, y) (a unit vector) from its
  * center: 1 all round for a plain ring; for a wake crest, only the two arcs
- * that lie on the arms of the swimmer's V.
+ * spreading out to either side of the swimmer's path (not ahead or behind).
  */
 export function rippleArc(ripple: RippleInstance, x: number, y: number): number {
   if (ripple.directionX === 0 && ripple.directionY === 0) return 1;
-  const shape = RIPPLES.wakeShape;
-  // A crest touches the V's arms at 90° − halfAngle either side of the heading.
-  const offset =
-    (x * ripple.directionX + y * ripple.directionY - Math.sin((shape.halfAngle * Math.PI) / 180)) /
-    Math.max(shape.arcWidth, 0.01);
+  const offset = (x * ripple.directionX + y * ripple.directionY) / Math.max(RIPPLES.wakeShape.arcWidth, 0.01);
   return Math.exp(-offset * offset);
 }
 
@@ -77,11 +73,11 @@ export class RippleSystem {
   }
 
   /**
-   * One crest of the wake behind a swimmer at `point`, heading `heading` at
-   * `speed` (only fast swimmers leave one; the callers decide). Each crest
-   * spreads at speed × sin(halfAngle) and shows around where it touches the
-   * arms of the V, so the crests left along the way line up into a V behind
-   * the swimmer that keeps spreading out.
+   * One crest of the wake parting from a swimmer's back at `point`, heading
+   * `heading` at `speed` (only fast swimmers leave one; the callers decide).
+   * Like a click's ripple, but it spreads out only to either side, at
+   * speed × sin(halfAngle): slower than the swimmer, so the crests left along
+   * the way fan out behind it into a V.
    */
   public triggerWake(point: Vec2, heading: number, speed: number, strength = 1): void {
     const spread = speed * Math.sin((RIPPLES.wakeShape.halfAngle * Math.PI) / 180);

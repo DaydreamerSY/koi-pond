@@ -158,7 +158,7 @@ describe("koi swimming and turning", () => {
     expect(cruising).toBeGreaterThan(holding + 0.15);
   });
 
-  it("leaves a V-shaped wake from its head when dashing just under the surface, but not when deep or only cruising", () => {
+  it("leaves a wake from its back when dashing just under the surface, but not when deep or only cruising", () => {
     const wakesBehind = (depth: number, state = SwimState.Burst): number => {
       const school = lone();
       const fish = school.fish[0];
@@ -172,11 +172,11 @@ describe("koi swimming and turning", () => {
         fish.targetDepth = depth;
         fish.depthStateAge = 0;
         school.update(STEP, (time += STEP));
-        const bow = fish.spine[Math.round((SPINE_NODES - 1) * 0.15)];
+        const back = fish.spine[Math.round((SPINE_NODES - 1) * 0.35)];
         count += school.ripples.instances.filter(
           (ripple) =>
-            ripple.alive && ripple.type === "wake" && ripple.age < STEP * 1.5 && length(sub(ripple.center, bow)) < 4 &&
-            // A crest of a V, opening along the koi's heading.
+            ripple.alive && ripple.type === "wake" && ripple.age < STEP * 1.5 && length(sub(ripple.center, back)) < 4 &&
+            // Spreading out to either side of the koi's heading.
             Math.cos(fish.heading) * ripple.directionX + Math.sin(fish.heading) * ripple.directionY > 0.99,
         ).length;
       }

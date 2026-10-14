@@ -301,14 +301,14 @@ describe("wakes", () => {
       const distance = length(delta);
       const band = Math.exp(-Math.abs(distance - rippleRadius(ripple)) * RIPPLES.types[ripple.type].bandSharpness);
       const arc = distance > 0.001 ? rippleArc(ripple, delta.x / distance, delta.y / distance) : 1;
-      // The water shader lets each crest build up over its first 0.2–0.7 s.
-      const t = Math.min(Math.max((ripple.age - 0.2) / 0.5, 0), 1);
+      // The water shader lets each crest build up over its first 0.15–0.5 s.
+      const t = Math.min(Math.max((ripple.age - 0.15) / 0.35, 0), 1);
       total += band * arc * ripple.strength * t * t * (3 - 2 * t);
     }
     return total;
   }
 
-  it("trail a V of spreading ripples behind a swimmer, with nothing outside it or ahead", () => {
+  it("spread ripples out to either side of a swimmer, fanning into a V behind it, with nothing ahead or along its path", () => {
     const ripples = new RippleSystem();
     const speed = 24;
     const position = { x: 60, y: 135 };
@@ -322,18 +322,24 @@ describe("wakes", () => {
       }
       ripples.update(dt);
     });
-    const half = (RIPPLES.wakeShape.halfAngle * Math.PI) / 180;
+    // Ripples spreading sideways at speed × sin(halfAngle) from points along the
+    // path reach out to atan(sin(halfAngle)) either side of it: the V.
+    const half = Math.atan(Math.sin((RIPPLES.wakeShape.halfAngle * Math.PI) / 180));
     let arms = 0;
     let outside = 0;
+    let path = 0;
     for (const back of [15, 20, 25]) {
       for (const sign of [-1, 1]) {
         // Along the arms of the V...
         arms += wakeAt(ripples, { x: position.x - back * Math.cos(half), y: position.y + sign * back * Math.sin(half) });
-        // ...not well outside them.
-        outside += wakeAt(ripples, { x: position.x - back * Math.cos(half * 2), y: position.y + sign * back * Math.sin(half * 2) });
+        // ...not well outside them...
+        outside += wakeAt(ripples, { x: position.x - back * Math.cos(half * 2.2), y: position.y + sign * back * Math.sin(half * 2.2) });
       }
+      // ...nor along the swimmer's own path behind it.
+      path += wakeAt(ripples, { x: position.x - back, y: position.y }) * 2;
     }
     expect(arms).toBeGreaterThan(outside * 3);
+    expect(arms).toBeGreaterThan(path * 3);
     // Nothing ahead of the swimmer.
     expect(wakeAt(ripples, { x: position.x + 8, y: position.y })).toBeLessThan(arms * 0.02);
   });

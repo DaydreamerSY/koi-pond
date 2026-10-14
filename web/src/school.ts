@@ -248,8 +248,9 @@ export class School {
 
   /**
    * A koi dashing along just under the surface (a burst, a rush to a click)
-   * parts the water: a long V-shaped wake opens behind its head, stronger the
-   * shallower and faster it goes. Cruising or idling, it leaves none.
+   * parts the water at its back: ripples spread out to either side and fan
+   * into a V behind it, stronger the shallower and faster it goes. Cruising
+   * or idling, it leaves none.
    */
   private updateWake(fish: Koi, dt: number): void {
     const wake = FISH.wake;
@@ -264,9 +265,9 @@ export class School {
     fish.wakeCountdown -= dt * Math.min(pace, 3);
     if (fish.wakeCountdown > 0) return;
     fish.wakeCountdown = wake.interval;
-    // The V opens from just behind the head, where the water first parts.
-    const bow = fish.spine[Math.round((SPINE_NODES - 1) * 0.15)];
-    this.ripples.triggerWake(bow, fish.heading, fish.speed, Math.min(1.6, shallowness * wake.strength * haste));
+    // The water parts over the back, at the dorsal fin, and spreads to either side.
+    const back = fish.spine[Math.round((SPINE_NODES - 1) * 0.35)];
+    this.ripples.triggerWake(back, fish.heading, fish.speed, Math.min(1.6, shallowness * wake.strength * haste));
   }
 
   private updateFeeding(fish: Koi, dt: number): void {

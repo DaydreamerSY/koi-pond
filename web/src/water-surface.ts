@@ -43,8 +43,8 @@ const fragmentShader = /* glsl */ `
   uniform vec4 uRipples[MAX_RIPPLES];
   // Per ripple: wake heading (xy), spread speed (z), 1 for a wake crest (w).
   uniform vec4 uRippleMotion[MAX_RIPPLES];
-  // sin(V half-angle), crest arc width.
-  uniform vec2 uWakeShape;
+  // How far round from straight out to the sides a wake ripple shows.
+  uniform float uWakeArcWidth;
   uniform vec4 uRipplePhysics[MAX_RIPPLE_TYPES];
   uniform vec4 uRippleCurves[MAX_RIPPLE_TYPES];
   uniform vec3 uColorTint;
@@ -235,12 +235,12 @@ const fragmentShader = /* glsl */ `
         * (1.0 - life * curves.z);
       float direction = signedDistance < 0.0 ? -1.0 : 1.0;
       if (motion.w > 0.5) {
-        // A wake crest is a ripple like a click's, showing around where it
-        // lies on the arms of the swimmer's V. It builds up over its first
-        // moments, so the V shows once it's clear of the swimmer instead of
-        // scrambling the koi itself.
-        float arcOffset = (dot(radial, motion.xy) - uWakeShape.x) / uWakeShape.y;
-        distortionBand *= exp(-arcOffset * arcOffset) * smoothstep(0.2, 0.7, ripple.z);
+        // A wake crest is a ripple like a click's that spreads out only to
+        // either side of the swimmer's path. It builds up over its first
+        // moments, so it shows once it's out from under the swimmer instead
+        // of scrambling the koi itself.
+        float arcOffset = dot(radial, motion.xy) / uWakeArcWidth;
+        distortionBand *= exp(-arcOffset * arcOffset) * smoothstep(0.15, 0.5, ripple.z);
       }
 
       displacement +=
@@ -437,7 +437,7 @@ export class WaterSurfacePass {
         uRippleCount: { value: 0 },
         uRipples: { value: this.rippleData },
         uRippleMotion: { value: this.rippleMotion },
-        uWakeShape: { value: new THREE.Vector2(0.5, 0.6) },
+        uWakeArcWidth: { value: 0.45 },
         uRipplePhysics: { value: this.ripplePhysics },
         uRippleCurves: { value: this.rippleCurves },
         uColorTint: { value: new THREE.Color() },
@@ -533,10 +533,7 @@ export class WaterSurfacePass {
       this.rippleMotion[activeCount].set(ripple.directionX, ripple.directionY, ripple.spread, wakeCrest ? 1 : 0);
       activeCount += 1;
     }
-    this.material.uniforms.uWakeShape.value.set(
-      Math.sin((RIPPLES.wakeShape.halfAngle * Math.PI) / 180),
-      Math.max(RIPPLES.wakeShape.arcWidth, 0.01),
-    );
+    this.material.uniforms.uWakeArcWidth.value = Math.max(RIPPLES.wakeShape.arcWidth, 0.01);
     this.material.uniforms.uTime.value = time;
     this.material.uniforms.uRippleCount.value = activeCount;
     this.material.uniforms.uColorTint.value.copy(
