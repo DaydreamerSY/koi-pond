@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { DUCKS, type DuckPaletteSetting } from "./config";
-import { duckSize, type Duck } from "./ducks";
-import { add, fromAngle, mul, perpendicular, type Vec2 } from "./math";
+import { duckSize, tailWag, type Duck } from "./ducks";
+import { add, fromAngle, mul, perpendicular, sub, type Vec2 } from "./math";
 import { tintForDepth } from "./pond-layout";
 import { SurfaceGeometryBatch } from "./surface-geometry";
 
@@ -14,10 +14,14 @@ function rotate(vector: Vec2, angle: number): Vec2 {
   return { x: vector.x * cosine - vector.y * sine, y: vector.x * sine + vector.y * cosine };
 }
 
+/** A duck this far under is out of sight. */
+const OUT_OF_SIGHT = 0.97;
+
 /**
  * Ducks seen from above, drawn on the water surface. Like lotus leaves, they
  * float, so their shadow falls on the pond bed (`shadowGroup` goes in the
- * underwater shadow scene).
+ * underwater shadow scene). A diving duck sinks from view, tinted like the
+ * water, and is gone while it swims underwater.
  */
 export class DuckRenderer {
   public readonly shadowGroup = new THREE.Group();
@@ -92,7 +96,7 @@ export class DuckRenderer {
   /** Paddling feet, seen through the water. */
   private drawFeet(duck: Duck): void {
     const palette = this.paletteOf(duck);
-    if (!palette) return;
+    if (!palette || duck.submerged > 0.3) return;
     const feet = tintForDepth(palette.feet, 0.55, this.colors.feet);
     const { length, width } = duckSize(duck);
     const forward = fromAngle(duck.heading);
@@ -105,36 +109,42 @@ export class DuckRenderer {
     }
   }
 
-  private setColors(source: Omit<DuckPaletteSetting, "name">, headDip: number): void {
+  private setColors(source: Omit<DuckPaletteSetting, "name">, headDip: number, submerged: number): void {
     const c = this.colors;
-    c.body.setHex(source.body);
-    c.wing.setHex(source.wing);
-    c.accent.setHex(source.accent);
-    c.neck.setHex(source.neck);
-    c.beak.setHex(source.beak);
-    c.tail.setHex(source.tail);
-    c.eye.setHex(EYE_COLOR);
+    // Sinking on a dive, the whole duck takes on the water's tint.
+    const under = submerged * 0.85;
+    tintForDepth(source.body, under, c.body);
+    tintForDepth(source.wing, under, c.wing);
+    tintForDepth(source.accent, under, c.accent);
+    tintForDepth(source.neck, under, c.neck);
+    tintForDepth(source.tail, under, c.tail);
+    tintForDepth(EYE_COLOR, under, c.eye);
     // The head is underwater while dabbling.
-    tintForDepth(source.head, headDip * 0.75, c.head);
-    if (headDip > 0) tintForDepth(source.beak, headDip * 0.75, c.beak);
+    tintForDepth(source.head, Math.max(headDip * 0.75, under), c.head);
+    tintForDepth(source.beak, Math.max(headDip * 0.75, under), c.beak);
   }
 
   private drawDuck(duck: Duck, time: number): void {
     const palette = this.paletteOf(duck);
-    if (!palette) return;
-    this.setColors(palette, duck.headDip);
+    if (!palette || duck.submerged >= OUT_OF_SIGHT) return;
+    this.setColors(palette, duck.headDip, duck.submerged);
     const c = this.colors;
     const batch = this.shapeBatch;
 
-    const { length, width } = duckSize(duck);
+    const size = duckSize(duck);
+    // A little smaller as it sinks out of sight.
+    const shrink = 1 - duck.submerged * 0.2;
+    const length = size.length * shrink;
+    const width = size.width * shrink;
     const forward = fromAngle(duck.heading);
     const side = perpendicular(forward);
     const at = (along: number, across: number): Vec2 =>
       add(add(duck.position, mul(forward, length * along)), mul(side, width * across));
 
-    // Shadow on the pond bed.
+    // Shadow on the pond bed (gone once the duck is under).
+    const afloat = 1 - duck.submerged;
     const shadowCenter = add(duck.position, DUCKS.shadow.offset);
-    this.shadowBatch.ellipse(shadowCenter, forward, side, length * 0.56, width * 0.52, undefined, 12);
+    if (afloat > 0.05) this.shadowBatch.ellipse(shadowCenter, forward, side, length * 0.56 * afloat, width * 0.52 * afloat, undefined, 12);
 
     // Wings spread while flapping off in a hurry.
     if (duck.flap > 0.02) {
@@ -145,8 +155,12 @@ export class DuckRenderer {
       }
     }
 
-    // Tail, body, and folded wings.
-    batch.triangle(at(-0.36, 0.26), at(-0.66, 0), at(-0.36, -0.26), c.tail);
+    // Tail (its tip swings side to side in a waggle), body, and folded wings.
+    const wag = tailWag(duck);
+    const tailRoot = at(-0.36, 0);
+    const tailTip = add(tailRoot, mul(rotate(forward, Math.PI + wag), length * 0.3));
+    const tailSide = mul(rotate(side, wag * 0.4), width * 0.26);
+    batch.triangle(add(tailRoot, tailSide), tailTip, sub(tailRoot, tailSide), c.tail);
     batch.ellipse(duck.position, forward, side, length * 0.5, width * 0.5, c.body, 14);
     for (const direction of [-1, 1]) {
       batch.ellipse(at(-0.12, direction * 0.2), forward, side, length * 0.32, width * 0.22, c.wing, 10);

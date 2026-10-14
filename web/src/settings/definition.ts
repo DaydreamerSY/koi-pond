@@ -241,14 +241,14 @@ const koi = group(
         description: "A holding koi still drifts at this share of its cruise speed.",
       }),
     }),
-    // A koi swimming just under the surface parts the water: a trail of rings
-    // behind it, like a duck's wake.
+    // A koi swimming just under the surface parts the water: a V-shaped wake
+    // trails behind it, like a duck's.
     wake: group({
       depth: num({
         default: 0.16, min: 0, max: 1, step: 0.01,
         description: "Koi shallower than this leave a wake (0 = at the surface); the shallower, the stronger.",
       }),
-      interval: num({ default: 0.45, min: 0.05, max: 3, step: 0.01, unit: "s", description: "Time between wake rings at cruising speed." }),
+      interval: num({ default: 0.2, min: 0.05, max: 3, step: 0.01, unit: "s", description: "Time between wake crests at cruising speed; the crests line up into the V." }),
       minimumSpeed: num({ default: 4, min: 0, max: 60, step: 0.5, unit: "px/s", description: "Slower than this, a koi leaves no wake." }),
       strength: num({ default: 0.9, min: 0, max: 2, step: 0.05, description: "How strong a koi's wake is next to a duck's (1 = the same)." }),
     }),
@@ -481,10 +481,10 @@ function rippleType(defaultValue: {
     maximumActive: num({
       default: defaultValue.maximumActive,
       min: 0,
-      max: 64,
+      max: 80,
       step: 1,
       int: true,
-      description: "Kept under MAX_RIPPLES (64) across all three ripple types combined.",
+      description: "All ripple types share MAX_RIPPLES (80); when they're full, rain gives way to wakes, wakes to clicks.",
     }),
     ripplesPerEvent: num({ default: defaultValue.ripplesPerEvent, min: 1, max: 20, step: 1, int: true }),
     intervalSeconds: num({ default: defaultValue.intervalSeconds, min: 0.005, max: 0.5, step: 0.001 }),
@@ -518,11 +518,33 @@ const ripples = group(
         strengthFalloff: 0.65, lifetime: 0.9, startRadius: 1.2, expansionSpeed: 17,
         distortion: 10.4, bandSharpness: 0.7, fadeStart: 0.25, strengthDecay: 0.45,
       }),
-      // The trail of rings a paddling duck leaves behind it.
+      // The crests of the V-shaped wake behind a swimming duck or koi (see
+      // wakeShape). A swimmer too slow for a V leaves plain rings instead.
       wake: rippleType({
-        maximumActive: 36, ripplesPerEvent: 1, intervalSeconds: 0.1, initialStrength: 0.42,
-        strengthFalloff: 0.7, lifetime: 1.15, startRadius: 2, expansionSpeed: 12,
+        maximumActive: 56, ripplesPerEvent: 1, intervalSeconds: 0.1, initialStrength: 0.42,
+        strengthFalloff: 0.7, lifetime: 3, startRadius: 2, expansionSpeed: 12,
         distortion: 6.5, bandSharpness: 0.55, fadeStart: 0.2, strengthDecay: 0.5,
+      }),
+    }),
+    // A moving swimmer's wake: each crest spreads at speed × sin(halfAngle)
+    // and shows only where it touches the arms of the V, so the crests left
+    // along the way line up into a V (a Kelvin wake is about 19.5° each side).
+    wakeShape: group({
+      halfAngle: num({
+        default: 19.5, min: 5, max: 60, step: 0.5, unit: "°",
+        description: "How wide the V behind a swimmer opens, each side of its path.",
+      }),
+      arcWidth: num({
+        default: 0.35, min: 0.05, max: 1, step: 0.01,
+        description: "How long each crest is along the V's arms (larger blurs the V toward rings).",
+      }),
+      minimumSpread: num({
+        default: 1.2, min: 0, max: 30, step: 0.1, unit: "px/s",
+        description: "A swimmer whose crests would spread slower than this is barely moving: it leaves plain rings instead of a V.",
+      }),
+      highlight: rgb({
+        default: [0.12, 0.16, 0.14], min: 0, max: 0.5, step: 0.001,
+        description: "Light the wake's crests catch, added to the water so the V shows on calm water (0 = only the ripple's bend).",
       }),
     }),
     rainEmitter: group({
@@ -1079,6 +1101,24 @@ const ducks = group(
       default: [0.3, 1.1], min: 0, max: 5, step: 0.05,
       description: "Pause (seconds) before ducklings set off after their mother, a little longer down the line.",
     }),
+    motherGap: num({
+      default: 5, min: 0, max: 30, step: 0.5, unit: "px",
+      description: "Room between the mother's tail and the first duckling in her line.",
+    }),
+    diveChance: num({
+      default: 0.15, min: 0, max: 1, step: 0.01,
+      description: "Chance, after paddling, to dive and come up somewhere else. Her ducklings wait where they are.",
+    }),
+    diveDistance: range({ default: [45, 110], min: 5, max: 300, step: 1, description: "How far (px) a dive goes underwater." }),
+    diveSpeed: num({ default: 18, min: 1, max: 80, step: 0.5, unit: "px/s", description: "Speed underwater." }),
+    surfaceWait: range({
+      default: [0.8, 1.6], min: 0, max: 8, step: 0.05,
+      description: "After their mother comes up, ducklings wait this long (seconds) before paddling over to her.",
+    }),
+    tailWagChance: num({
+      default: 0.07, min: 0, max: 2, step: 0.01, unit: "/s",
+      description: "How often a duck waggles its tail (they always do after preening or a dive).",
+    }),
     cruiseSpeed: range({ default: [5, 8.5], min: 0, max: 60, step: 0.5 }),
     hurrySpeed: num({ default: 15, min: 0, max: 80, step: 0.5, unit: "px/s" }),
     fleeSpeed: num({ default: 27, min: 0, max: 100, step: 0.5, unit: "px/s" }),
@@ -1093,7 +1133,7 @@ const ducks = group(
     restDuration: range({ default: [2.5, 7], min: 0, max: 60, step: 0.5 }),
     dabbleChance: num({ default: 0.35, min: 0, max: 1, step: 0.01, description: "Chance to tip the head under for food after paddling." }),
     preenChance: num({ default: 0.25, min: 0, max: 1, step: 0.01, description: "Chance to stop and preen after paddling." }),
-    wakeInterval: num({ default: 0.42, min: 0.05, max: 3, step: 0.01, unit: "s" }),
+    wakeInterval: num({ default: 0.3, min: 0.05, max: 3, step: 0.01, unit: "s", description: "Time between wake crests while paddling." }),
     shadow: group({
       color: color({ default: 0x0a2b26 }),
       opacity: num({ default: 0.42, min: 0, max: 1, step: 0.01 }),

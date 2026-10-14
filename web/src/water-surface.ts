@@ -41,6 +41,12 @@ const fragmentShader = /* glsl */ `
   uniform float uTime;
   uniform int uRippleCount;
   uniform vec4 uRipples[MAX_RIPPLES];
+  // Per ripple: wake heading (xy), spread speed (z), 1 for a wake crest (w).
+  uniform vec4 uRippleMotion[MAX_RIPPLES];
+  // sin(V half-angle), crest arc width.
+  uniform vec2 uWakeShape;
+  // Light caught by the crests of a wake, so its V reads on calm water.
+  uniform vec3 uWakeHighlight;
   uniform vec4 uRipplePhysics[MAX_RIPPLE_TYPES];
   uniform vec4 uRippleCurves[MAX_RIPPLE_TYPES];
   uniform vec3 uColorTint;
@@ -197,6 +203,7 @@ const fragmentShader = /* glsl */ `
 
   void main() {
     vec2 pixel = vec2(vUv.x * uResolution.x, (1.0 - vUv.y) * uResolution.y);
+    float wakeLight = 0.0;
     vec2 displacement = vec2(
       sin(pixel.y * 0.051 + uTime * 0.31) + sin(pixel.y * 0.017 - uTime * 0.19),
       cos(pixel.x * 0.043 - uTime * 0.23) + sin(pixel.x * 0.014 + uTime * 0.16)
@@ -206,6 +213,7 @@ const fragmentShader = /* glsl */ `
       if (index >= uRippleCount) break;
 
       vec4 ripple = uRipples[index];
+      vec4 motion = uRippleMotion[index];
       float typeIndex = floor(ripple.w * 0.5);
       float strength = mod(ripple.w, 2.0);
       vec4 physics = ripplePhysics(typeIndex);
@@ -215,7 +223,7 @@ const fragmentShader = /* glsl */ `
       vec2 radial = delta / max(distanceToCenter, 0.001);
       float radius =
         physics.y
-        + ripple.z * physics.z;
+        + ripple.z * motion.z;
       float signedDistance = distanceToCenter - radius;
       float fade = 1.0 - smoothstep(
         physics.x * curves.y,
@@ -229,6 +237,13 @@ const fragmentShader = /* glsl */ `
         * strength
         * (1.0 - life * curves.z);
       float direction = signedDistance < 0.0 ? -1.0 : 1.0;
+      // A wake crest only shows where it lies on the arms of the swimmer's V.
+      if (motion.w > 0.5) {
+        float arcOffset = (dot(radial, motion.xy) - uWakeShape.x) / uWakeShape.y;
+        distortionBand *= exp(-arcOffset * arcOffset);
+        // Lit on the crest's outer face, the side the swimmer pushed it to.
+        wakeLight += distortionBand * smoothstep(-1.5, 1.0, signedDistance);
+      }
 
       displacement +=
         vec2(radial.x, -radial.y)
@@ -251,6 +266,7 @@ const fragmentShader = /* glsl */ `
     );
 
     color *= uColorTint;
+    color += uWakeHighlight * min(wakeLight, 1.0);
 
     if (uShowCurrentEffect > 0.5) {
       vec2 largeWavePixel = directionalWavePixel(
@@ -390,6 +406,10 @@ export class WaterSurfacePass {
     { length: MAX_RIPPLES },
     () => new THREE.Vector4(),
   );
+  private readonly rippleMotion = Array.from(
+    { length: MAX_RIPPLES },
+    () => new THREE.Vector4(),
+  );
   private readonly ripplePhysics = Array.from(
     { length: MAX_RIPPLE_TYPES },
     () => new THREE.Vector4(1, 0, 0, 0),
@@ -419,6 +439,9 @@ export class WaterSurfacePass {
         uTime: { value: 0 },
         uRippleCount: { value: 0 },
         uRipples: { value: this.rippleData },
+        uRippleMotion: { value: this.rippleMotion },
+        uWakeShape: { value: new THREE.Vector2(1 / 3, 0.3) },
+        uWakeHighlight: { value: new THREE.Color() },
         uRipplePhysics: { value: this.ripplePhysics },
         uRippleCurves: { value: this.rippleCurves },
         uColorTint: { value: new THREE.Color() },
@@ -510,8 +533,15 @@ export class WaterSurfacePass {
         ripple.age,
         encodedTypeAndStrength,
       );
+      const wakeCrest = ripple.directionX !== 0 || ripple.directionY !== 0;
+      this.rippleMotion[activeCount].set(ripple.directionX, ripple.directionY, ripple.spread, wakeCrest ? 1 : 0);
       activeCount += 1;
     }
+    this.material.uniforms.uWakeShape.value.set(
+      Math.sin((RIPPLES.wakeShape.halfAngle * Math.PI) / 180),
+      Math.max(RIPPLES.wakeShape.arcWidth, 0.01),
+    );
+    this.material.uniforms.uWakeHighlight.value.setRGB(...RIPPLES.wakeShape.highlight);
     this.material.uniforms.uTime.value = time;
     this.material.uniforms.uRippleCount.value = activeCount;
     this.material.uniforms.uColorTint.value.copy(

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "./config";
+import { CANVAS_HEIGHT, CANVAS_WIDTH, DUCKS, RIPPLES } from "./config";
 import { Crabs } from "./crabs";
-import { DuckFamilies, duckBodyRadius, duckRadius, duckSize } from "./ducks";
+import { DuckFamilies, duckBodyRadius, duckRadius, duckSize, tailWag, type Duck } from "./ducks";
 import { Frogs } from "./frogs";
 import { LotusMotion } from "./lotus-motion";
 import { length, sub, vec } from "./math";
-import { RippleSystem } from "./ripple-system";
+import { rippleArc, rippleRadius, RippleSystem } from "./ripple-system";
 import { ShrimpSchool } from "./shrimp";
 
 const STEP = 1 / 60;
@@ -33,6 +33,13 @@ function pond(): { lotus: LotusMotion; ripples: RippleSystem; step: (dt: number,
   };
 }
 
+/** Sends a duck diving right away (beginDive is private, and fails without open water ahead, so retry). */
+function sendDiving(families: DuckFamilies, duck: Duck): boolean {
+  const diver = families as unknown as { beginDive(duck: Duck): boolean };
+  for (let attempt = 0; attempt < 50; attempt += 1) if (diver.beginDive(duck)) return true;
+  return false;
+}
+
 describe("ducks", () => {
   it("paddle around for minutes without ever climbing onto a lotus leaf or leaving the pond", () => {
     const { lotus, ripples, step } = pond();
@@ -46,6 +53,8 @@ describe("ducks", () => {
         expect(duck.position.x).toBeLessThanOrEqual(CANVAS_WIDTH);
         expect(duck.position.y).toBeGreaterThanOrEqual(0);
         expect(duck.position.y).toBeLessThanOrEqual(CANVAS_HEIGHT);
+        // Diving, a duck may pass under a leaf.
+        if (duck.submerged > 0.5) continue;
         for (const leaf of lotus.leaves) {
           worstOverlap = Math.max(worstOverlap, leaf.radius + duckRadius(duck) * 0.7 - length(sub(duck.position, leaf)));
         }
@@ -69,8 +78,104 @@ describe("ducks", () => {
     expect(ducklings.length).toBeGreaterThan(1);
     for (const duckling of ducklings) {
       expect(duckling.milling).toBe(false);
-      expect(length(sub(duckling.position, families.ducks[duckling.leader].position))).toBeLessThan(22);
+      const leader = families.ducks[duckling.leader];
+      const gap = length(sub(duckling.position, leader.position));
+      if (leader.duckling) {
+        expect(gap).toBeLessThan(15);
+      } else {
+        // The first one keeps clear of its mother's tail (it reaches 0.66 of her length back).
+        const clear = duckSize(leader).length * 0.66 + duckSize(duckling).length * 0.5;
+        expect(gap).toBeGreaterThan(clear);
+        expect(gap).toBeLessThan(clear + 12);
+      }
     }
+  });
+
+  it("dive and come up somewhere else", () => {
+    const { lotus, ripples, step } = pond();
+    const families = new DuckFamilies(lotus);
+    const mother = families.ducks[0];
+    const time = run(4, (dt, now) => {
+      step(dt, now);
+      families.update(dt, ripples);
+    });
+    const startedAt = { ...mother.position };
+    expect(sendDiving(families, mother)).toBe(true);
+    const target = { ...mother.target };
+    let deepest = 0;
+    let surfacedAt: { x: number; y: number } | null = null;
+    run(12, (dt, now) => {
+      step(dt, now);
+      families.update(dt, ripples);
+      deepest = Math.max(deepest, mother.submerged);
+      if (!surfacedAt && mother.state === "surface") surfacedAt = { ...mother.position };
+    }, time);
+    // Right under, then up again where she was heading, well away from where she went down.
+    expect(deepest).toBe(1);
+    expect(surfacedAt).not.toBeNull();
+    expect(mother.submerged).toBe(0);
+    expect(length(sub(surfacedAt!, target))).toBeLessThan(5);
+    expect(length(sub(surfacedAt!, startedAt))).toBeGreaterThan(30);
+  });
+
+  it("keep the ducklings still while their mother is underwater, and set off only after she is up", () => {
+    const { lotus, ripples, step } = pond();
+    const families = new DuckFamilies(lotus);
+    const mother = families.ducks[0];
+    const ducklings = families.ducks.filter((duck) => duck.duckling && duck.mother === 0);
+    let time = run(4, (dt, now) => {
+      step(dt, now);
+      families.update(dt, ripples);
+    });
+    expect(sendDiving(families, mother)).toBe(true);
+    // Let them come to a stop, then watch them while she's still under.
+    time = run(2.5, (dt, now) => {
+      step(dt, now);
+      families.update(dt, ripples);
+    }, time);
+    expect(mother.state).toBe("dive");
+    const held = ducklings.map((duck) => ({ ...duck.position }));
+    let drift = 0;
+    time = run(1, (dt, now) => {
+      if (mother.state !== "dive") return;
+      step(dt, now);
+      families.update(dt, ripples);
+      for (const [index, duck] of ducklings.entries()) drift = Math.max(drift, length(sub(duck.position, held[index])));
+    }, time);
+    expect(drift).toBeLessThan(3);
+    expect(ducklings.every((duck) => duck.waiting)).toBe(true);
+
+    // She comes up: a pause, then they head over to her.
+    let upFor = -1;
+    let firstMove = -1;
+    run(14, (dt, now) => {
+      step(dt, now);
+      families.update(dt, ripples);
+      if (upFor < 0 && mother.state !== "dive") upFor = 0;
+      if (upFor >= 0) upFor += dt;
+      if (upFor >= 0 && firstMove < 0 && ducklings.some((duck) => !duck.waiting)) firstMove = upFor;
+    }, time);
+    expect(firstMove).toBeGreaterThan(DUCKS.surfaceWait[0] * 0.9);
+    for (const duck of ducklings) {
+      expect(duck.waiting).toBe(false);
+      expect(length(sub(duck.position, mother.position))).toBeLessThan(3 * 20 + 6);
+    }
+  });
+
+  it("waggle their tails, always after preening", () => {
+    const { lotus, ripples, step } = pond();
+    const families = new DuckFamilies(lotus);
+    const mother = families.ducks[0];
+    mother.state = "preen";
+    mother.stateAge = 0;
+    mother.stateDuration = 0.5;
+    let widest = 0;
+    run(1.6, (dt, now) => {
+      step(dt, now);
+      families.update(dt, ripples);
+      widest = Math.max(widest, Math.abs(tailWag(mother)));
+    });
+    expect(widest).toBeGreaterThan(0.2);
   });
 
   it("let ducklings potter about a resting mother, each its own way, then follow after a pause", () => {
@@ -138,7 +243,8 @@ describe("ducks", () => {
       closest = Math.min(closest, length(sub(mother.position, food)));
       dabbled ||= mother.state === "dabble";
     });
-    expect(closest).toBeLessThan(10);
+    // She takes her own place in the ring the hungry ducks form around the food.
+    expect(closest).toBeLessThan(duckBodyRadius(mother) * 1.1 + 6);
     expect(dabbled).toBe(true);
   });
 
@@ -155,6 +261,8 @@ describe("ducks", () => {
       families.update(dt, ripples);
       for (let a = 0; a < ducks.length; a += 1) {
         for (let b = a + 1; b < ducks.length; b += 1) {
+          // A diving duck passes beneath the others.
+          if (ducks[a].submerged > 0.5 || ducks[b].submerged > 0.5) continue;
           const room = duckBodyRadius(ducks[a]) + duckBodyRadius(ducks[b]);
           worst = Math.min(worst, length(sub(ducks[a].position, ducks[b].position)) / room);
         }
@@ -168,6 +276,70 @@ describe("ducks", () => {
     const families = new DuckFamilies(lotus);
     run(5, (dt) => families.update(dt, ripples));
     expect(ripples.instances.some((ripple) => ripple.alive && ripple.type === "wake")).toBe(true);
+  });
+});
+
+describe("wakes", () => {
+  /** How strongly the live ripples ring at a point, weighed as the water shader does. */
+  function wakeAt(ripples: RippleSystem, point: { x: number; y: number }): number {
+    let total = 0;
+    for (const ripple of ripples.instances) {
+      if (!ripple.alive || ripple.age < 0) continue;
+      const delta = sub(point, ripple.center);
+      const distance = length(delta);
+      const band = Math.exp(-Math.abs(distance - rippleRadius(ripple)) * RIPPLES.types[ripple.type].bandSharpness);
+      const arc = distance > 0.001 ? rippleArc(ripple, delta.x / distance, delta.y / distance) : 1;
+      total += band * arc * ripple.strength;
+    }
+    return total;
+  }
+
+  it("trail a V behind a swimmer, not rings", () => {
+    const ripples = new RippleSystem();
+    const speed = 24;
+    const position = { x: 60, y: 135 };
+    let countdown = 0;
+    run(1.4, (dt) => {
+      position.x += speed * dt;
+      countdown -= dt;
+      if (countdown <= 0) {
+        countdown = 0.08;
+        ripples.triggerWake(position, 0, speed);
+      }
+      ripples.update(dt);
+    });
+    const half = (RIPPLES.wakeShape.halfAngle * Math.PI) / 180;
+    let arms = 0;
+    let middle = 0;
+    let wide = 0;
+    for (const back of [15, 20, 25]) {
+      for (const sign of [-1, 1]) {
+        // Along the arms of the V...
+        arms += wakeAt(ripples, { x: position.x - back * Math.cos(half), y: position.y + sign * back * Math.sin(half) });
+        // ...not well outside them, where rings would also reach...
+        wide += wakeAt(ripples, { x: position.x - back * Math.cos(half * 2.6), y: position.y + sign * back * Math.sin(half * 2.6) });
+      }
+      // ...nor straight behind the swimmer.
+      middle += wakeAt(ripples, { x: position.x - back, y: position.y }) * 2;
+    }
+    expect(arms).toBeGreaterThan(middle * 3);
+    expect(arms).toBeGreaterThan(wide * 2.5);
+    // Nothing ahead of the swimmer.
+    expect(wakeAt(ripples, { x: position.x + 8, y: position.y })).toBeLessThan(arms * 0.02);
+  });
+
+  it("spread each crest at the swimmer's speed × sin(half-angle), or ring plainly when too slow for a V", () => {
+    const ripples = new RippleSystem();
+    ripples.triggerWake({ x: 100, y: 100 }, 0.5, 30);
+    const crest = ripples.instances.find((ripple) => ripple.alive)!;
+    expect(crest.spread).toBeCloseTo(30 * Math.sin((RIPPLES.wakeShape.halfAngle * Math.PI) / 180), 5);
+    expect(Math.hypot(crest.directionX, crest.directionY)).toBeCloseTo(1, 5);
+    ripples.reset();
+    ripples.triggerWake({ x: 100, y: 100 }, 0.5, 1);
+    const ring = ripples.instances.find((ripple) => ripple.alive)!;
+    expect(ring.directionX).toBe(0);
+    expect(ring.directionY).toBe(0);
+    expect(rippleArc(ring, 1, 0)).toBe(1);
   });
 });
 

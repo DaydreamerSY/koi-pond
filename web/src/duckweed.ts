@@ -15,6 +15,7 @@ import {
 } from "./duckweed-geometry";
 import {
   RIPPLE_TYPE_ORDER,
+  rippleRadius,
   type RippleInstance,
   type RippleSystem,
   type RippleType,
@@ -29,15 +30,14 @@ const RIPPLE_PRIORITY: readonly RippleType[] = ["touch", "mouth", "wake", "rain"
 const DECLARATIONS = /* glsl */ `
   #define DUCKWEED_MAX_PATCHES ${MAX_DUCKWEED_PATCHES}
   #define DUCKWEED_MAX_RIPPLES ${MAX_DUCKWEED_RIPPLES}
-  #define DUCKWEED_RIPPLE_TYPES ${MAX_RIPPLE_TYPES}
   attribute float patchIndex;
   attribute vec2 leafCenter;
   attribute float leafSign;
   uniform vec4 uPatches[DUCKWEED_MAX_PATCHES];
   uniform int uRippleCount;
+  // Per ripple: center (xy), how far its ring has spread (z), life left 0–1 (w).
   uniform vec4 uRipples[DUCKWEED_MAX_RIPPLES];
   uniform float uRippleStrength[DUCKWEED_MAX_RIPPLES];
-  uniform vec4 uTypePhysics[DUCKWEED_RIPPLE_TYPES];
   uniform float uStrength;
   uniform float uBandWidth;
   uniform float uFalloffDistance;
@@ -64,15 +64,12 @@ function transformChunk(shadow: boolean): string {
       for (int i = 0; i < DUCKWEED_MAX_RIPPLES; i++) {
         if (i >= uRippleCount) break;
         vec4 ripple = uRipples[i];
-        vec4 physics = uTypePhysics[int(ripple.w + 0.5)];
         vec2 delta = dwLeaf - ripple.xy;
         float d = length(delta);
         vec2 dir = d > 0.001 ? delta / d : vec2(0.0);
-        float front = physics.y + physics.z * ripple.z;
-        float x = d - front;
+        float x = d - ripple.z;
         float env = exp(-(x * x) / (dwWidth * dwWidth));
-        float remaining = clamp(1.0 - ripple.z / max(physics.x, 0.0001), 0.0, 1.0);
-        float fade = remaining * remaining;
+        float fade = ripple.w * ripple.w;
         float falloff = 1.0 / (1.0 + d / dwFalloffDistance);
         float amp = uStrength * uRippleStrength[i] * fade * falloff;
         dwPush += dir * amp * env * (x / dwWidth) * ${DUCKWEED_RIPPLE_PEAK_SCALE.toFixed(2)};
@@ -176,16 +173,11 @@ export class DuckweedPass {
     () => new THREE.Vector4(),
   );
   private readonly rippleStrength = new Float32Array(MAX_DUCKWEED_RIPPLES);
-  private readonly typePhysics = Array.from(
-    { length: MAX_RIPPLE_TYPES },
-    () => new THREE.Vector4(1, 0, 0, 0),
-  );
   private readonly uniforms = {
     uPatches: { value: this.patchData },
     uRippleCount: { value: 0 },
     uRipples: { value: this.rippleData },
     uRippleStrength: { value: this.rippleStrength },
-    uTypePhysics: { value: this.typePhysics },
     uStrength: { value: 0 },
     uBandWidth: { value: 1 },
     uFalloffDistance: { value: 1 },
@@ -282,13 +274,6 @@ export class DuckweedPass {
     uniforms.uSpin.value = response.spin;
     for (const [typeIndex, type] of RIPPLE_TYPE_ORDER.entries()) {
       if (typeIndex >= MAX_RIPPLE_TYPES) break;
-      const profile = RIPPLES.types[type];
-      this.typePhysics[typeIndex].set(
-        profile.lifetime,
-        profile.startRadius,
-        profile.expansionSpeed,
-        0,
-      );
       this.typeWeights[typeIndex] =
         type === "touch"
           ? response.touchWeight
@@ -309,11 +294,14 @@ export class DuckweedPass {
       for (const ripple of ripples) {
         if (count >= MAX_DUCKWEED_RIPPLES) break;
         if (!ripple.alive || ripple.age < 0 || ripple.type !== type) continue;
+        // The ring's spread is worked out here: a wake crest spreads at its
+        // own swimmer's pace (every crest pushes all round, not only along the V).
+        const lifetime = Math.max(RIPPLES.types[type].lifetime, 1e-4);
         this.rippleData[count].set(
           ripple.center.x,
           ripple.center.y,
-          ripple.age,
-          typeIndex,
+          rippleRadius(ripple),
+          Math.min(Math.max(1 - ripple.age / lifetime, 0), 1),
         );
         this.rippleStrength[count] = ripple.strength * weight;
         count += 1;

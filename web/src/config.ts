@@ -55,7 +55,7 @@ export const KOI_PALETTES = live["koi-palettes"];
 export const KOI_PATTERN_PATCHES = live["koi-patterns"];
 export const POND_BED = live["pond-bed"];
 export const RIPPLES: typeof live.ripples & { maximumInstances: number } = Object.assign(live.ripples, {
-  maximumInstances: 64,
+  maximumInstances: 80,
 });
 export const WATER = live.water;
 export const LOTUS = live.lotus;

@@ -1,5 +1,7 @@
 // Ducks paddle on the surface, steering around lotus leaves, with their
-// ducklings in a line behind them. Stepped by School at the fixed 60 Hz rate.
+// ducklings in a line behind them; now and then a duck dives and comes up
+// somewhere else while her ducklings wait. Stepped by School at the fixed
+// 60 Hz rate.
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, DUCKS, DUCK_SPAWNS, viewportPoint } from "./config";
 import { add, clamp, fromAngle, length, mul, normalize, sub, vec, wrapAngle, type Vec2, XorShift32 } from "./math";
@@ -7,7 +9,7 @@ import type { LotusMotion } from "./lotus-motion";
 import type { LeafCircle } from "./pond-layout";
 import type { RippleSystem } from "./ripple-system";
 
-export type DuckState = "paddle" | "rest" | "dabble" | "preen" | "approach" | "flee";
+export type DuckState = "paddle" | "rest" | "dabble" | "preen" | "approach" | "flee" | "dive" | "surface";
 
 export interface Duck {
   position: Vec2;
@@ -48,10 +50,39 @@ export interface Duck {
   followDelay: number;
   /** A milling duckling's own dabble, seconds in (−1: not dabbling). */
   dipTime: number;
+  /** How far under the water the duck is (0 afloat, 1 out of sight), diving. */
+  submerged: number;
+  /** A tail waggle, seconds in (−1: not waggling). */
+  wagTime: number;
+  /** Duckling staying put while its mother is under, until she's back up. */
+  waiting: boolean;
 }
 
 const DIP_SECONDS = 0.8;
 const DIP_CYCLE = 1.15;
+/** Tipping forward and slipping under, at the start of a dive. */
+const DIVE_DOWN_SECONDS = 0.7;
+/** Bobbing back up, then a shake of the tail. */
+const SURFACE_SECONDS = 1.3;
+const WAG_SECONDS = 0.75;
+
+function smoothstep(edge0: number, edge1: number, value: number): number {
+  const t = clamp((value - edge0) / (edge1 - edge0), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+/** The tail's sideways swing (radians) during a waggle: quick, and dying away. */
+export function tailWag(duck: Duck): number {
+  if (duck.wagTime < 0) return 0;
+  return Math.sin(duck.wagTime * Math.PI * 2 * 5.5) * 0.55 * (1 - duck.wagTime / WAG_SECONDS);
+}
+
+/** How far behind its leader a duckling swims: clear of the mother's tail, then nose to tail. */
+function lineSpacing(leader: Duck, duck: Duck): number {
+  if (leader.duckling) return DUCKS.ducklingSpacing;
+  // The mother's tail reaches 0.66 of her length behind her middle (see duck-renderer).
+  return duckSize(leader).length * 0.66 + duckSize(duck).length * 0.5 + DUCKS.motherGap;
+}
 
 /** Head-under curve for dabbling: a dip every DIP_CYCLE seconds. */
 function dipCurve(time: number): number {
@@ -113,7 +144,7 @@ export class DuckFamilies {
    */
   public callTo(point: Vec2): void {
     const hungry = this.ducks
-      .filter((duck) => !duck.duckling && length(sub(duck.position, point)) <= DUCKS.callRadius)
+      .filter((duck) => !duck.duckling && duck.state !== "dive" && length(sub(duck.position, point)) <= DUCKS.callRadius)
       .map((duck) => ({ duck, angle: Math.atan2(duck.position.y - point.y, duck.position.x - point.x) }))
       .sort((a, b) => a.angle - b.angle);
     if (hungry.length === 0) return;
@@ -127,9 +158,10 @@ export class DuckFamilies {
     }
   }
 
-  /** Startles every duck into a short, wing-flapping dash. */
+  /** Startles every duck into a short, wing-flapping dash (one underwater doesn't notice). */
   public scatter(): void {
     for (const duck of this.ducks) {
+      if (duck.state === "dive") continue;
       duck.flap = 1;
       if (duck.duckling) continue;
       const angle = duck.heading + this.random.range(-1.6, 1.6);
@@ -144,6 +176,7 @@ export class DuckFamilies {
       if (duck.duckling) this.follow(duck, dt);
       else this.steer(duck, dt, ripples);
       this.move(duck, dt);
+      this.waggle(duck, dt);
       if (!duck.duckling) this.paddleWake(duck, dt, ripples);
     }
     this.keepApart();
@@ -159,8 +192,10 @@ export class DuckFamilies {
       const placement = viewportPoint(spawn.x, spawn.y);
       const mother = this.ducks.length;
       this.add(previous, spawnIndex, 0, placement, spawn.heading, false, spawn.palette, -1, mother);
+      let behind = placement;
       for (let chain = 1; chain <= spawn.ducklings; chain += 1) {
-        const behind = sub(placement, mul(fromAngle(spawn.heading), DUCKS.ducklingSpacing * chain));
+        const leader = this.ducks[this.ducks.length - 1];
+        behind = sub(behind, mul(fromAngle(spawn.heading), lineSpacing(leader, { ...leader, duckling: true })));
         this.add(previous, spawnIndex, chain, behind, spawn.heading, true, 0, this.ducks.length - 1, mother);
       }
     }
@@ -210,6 +245,9 @@ export class DuckFamilies {
       spotTimer: 0,
       followDelay: -1,
       dipTime: -1,
+      submerged: 0,
+      wagTime: -1,
+      waiting: false,
     };
     if (!duckling) this.beginPaddle(duck);
     this.ducks.push(duck);
@@ -224,6 +262,7 @@ export class DuckFamilies {
     let turnRate = DUCKS.turnRate;
     let headTurn = 0;
     let headDip = 0;
+    let avoid = true;
 
     switch (duck.state) {
       case "paddle":
@@ -266,22 +305,90 @@ export class DuckFamilies {
         break;
       case "preen":
         headTurn = Math.sin(duck.stateAge * 2.3 + duck.phase) * 0.9;
+        if (duck.stateAge >= duck.stateDuration) {
+          // A good shake of the tail to finish.
+          duck.wagTime = 0;
+          this.begin(duck, "rest", this.randomRange(DUCKS.restDuration));
+        }
+        break;
+      case "dive": {
+        // Tip forward and slip under, swim over underwater, then come up there.
+        headDip = 1;
+        goal = duck.target;
+        if (duck.stateAge < DIVE_DOWN_SECONDS) {
+          duck.submerged = smoothstep(0.2, DIVE_DOWN_SECONDS, duck.stateAge);
+          targetSpeed = duck.cruiseSpeed * 0.5;
+          if (duck.submerged > 0.5 && !duck.dipRippled) {
+            duck.dipRippled = true;
+            ripples.trigger("rain", duck.position, 0.8);
+          }
+          break;
+        }
+        duck.submerged = 1;
+        avoid = false;
+        turnRate *= 2.5;
+        const distance = length(sub(duck.target, duck.position));
+        targetSpeed = DUCKS.diveSpeed * clamp(distance / 12, 0.3, 1);
+        // A few bubbles rise along the way.
+        duck.wakeCountdown -= dt;
+        if (duck.wakeCountdown <= 0) {
+          duck.wakeCountdown = this.random.range(0.45, 0.9);
+          ripples.trigger("mouth", duck.position, 0.35);
+        }
+        if (distance < 3 || duck.stateAge >= duck.stateDuration) {
+          this.begin(duck, "surface", SURFACE_SECONDS);
+          ripples.trigger("rain", duck.position, 0.9);
+        }
+        break;
+      }
+      case "surface":
+        duck.submerged = 1 - smoothstep(0, 0.45, duck.stateAge);
+        headDip = 1 - smoothstep(0.1, 0.55, duck.stateAge);
+        if (duck.stateAge > 0.55 && !duck.dipRippled) {
+          // Up again: a shake of the tail and a little flutter.
+          duck.dipRippled = true;
+          duck.wagTime = 0;
+          duck.flap = Math.max(duck.flap, 0.3);
+        }
+        // Then she waits for her ducklings to catch up.
         if (duck.stateAge >= duck.stateDuration) this.begin(duck, "rest", this.randomRange(DUCKS.restDuration));
         break;
     }
+    // Anything that ends a dive early (a click) brings the duck straight up.
+    if (duck.state !== "dive" && duck.state !== "surface") duck.submerged = Math.max(0, duck.submerged - dt * 3);
 
     const ease = 1 - Math.exp(-dt * 6);
     duck.headTurn += (headTurn - duck.headTurn) * ease;
     duck.headDip += (headDip - duck.headDip) * Math.min(1, ease * 2);
-    this.turnAndAccelerate(duck, goal, targetSpeed, turnRate, dt);
+    this.turnAndAccelerate(duck, goal, targetSpeed, turnRate, dt, avoid);
   }
 
   private afterPaddle(duck: Duck): void {
-    const roll = this.random.unit();
+    let roll = this.random.unit();
+    if (roll < DUCKS.diveChance && this.beginDive(duck)) return;
+    roll -= DUCKS.diveChance;
     if (roll < DUCKS.dabbleChance) this.begin(duck, "dabble", this.random.range(1.6, 3.4));
     else if (roll < DUCKS.dabbleChance + DUCKS.preenChance) this.begin(duck, "preen", this.random.range(2.5, 5));
     else if (roll < DUCKS.dabbleChance + DUCKS.preenChance + 0.2) this.begin(duck, "rest", this.randomRange(DUCKS.restDuration));
     else this.beginPaddle(duck);
+  }
+
+  /** Dives for somewhere ahead in open water, to come up clear of the leaves. False if there's nowhere to go. */
+  private beginDive(duck: Duck): boolean {
+    const radius = duckRadius(duck);
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const distance = this.randomRange(DUCKS.diveDistance);
+      const candidate = add(duck.position, mul(fromAngle(duck.heading + this.random.range(-1.3, 1.3)), distance));
+      const margin = Math.max(DUCKS.edgeMargin, 4);
+      const inPond = candidate.x > margin && candidate.x < CANVAS_WIDTH - margin && candidate.y > margin && candidate.y < CANVAS_HEIGHT - margin;
+      const clear = this.leaves.every((leaf) => length(sub(candidate, leaf)) > leaf.radius + DUCKS.leafClearance + radius * 1.5);
+      if (!inPond || !clear) continue;
+      this.begin(duck, "dive", DIVE_DOWN_SECONDS + distance / Math.max(DUCKS.diveSpeed, 1) * 1.6 + 2);
+      duck.target = candidate;
+      duck.wakeCountdown = 0.4;
+      return true;
+    }
+    return false;
   }
 
   private beginPaddle(duck: Duck): void {
@@ -327,6 +434,26 @@ export class DuckFamilies {
   private follow(duck: Duck, dt: number): void {
     const mother = this.ducks[duck.mother];
     if (!mother) return;
+    if (mother.state === "dive") {
+      // Their mother is underwater: they stay where they are and wait for her.
+      duck.waiting = true;
+      duck.followDelay = -1;
+      this.waitFor(duck, dt);
+      return;
+    }
+    if (duck.waiting) {
+      // She's back up: a moment's pause, then they paddle over to her.
+      if (duck.followDelay < 0) duck.followDelay = this.randomRange(DUCKS.surfaceWait) + (duck.chainIndex - 1) * 0.15;
+      duck.followDelay -= dt;
+      if (duck.followDelay > 0) {
+        this.waitFor(duck, dt);
+        return;
+      }
+      duck.waiting = false;
+      duck.followDelay = -1;
+      duck.milling = false;
+      duck.dipTime = -1;
+    }
     const motherSwimming = mother.state === "paddle" || mother.state === "approach" || mother.state === "flee";
     if (!motherSwimming) {
       if (!duck.milling) {
@@ -360,19 +487,22 @@ export class DuckFamilies {
   private followLine(duck: Duck, mother: Duck, dt: number): void {
     const leader = this.ducks[duck.leader];
     if (!leader) return;
-    const spacing = DUCKS.ducklingSpacing * (leader.duckling ? 1 : 1.3);
-    const anchor = sub(leader.position, mul(fromAngle(leader.heading), spacing));
-    const toAnchor = sub(anchor, duck.position);
-    const distance = length(toAnchor);
-    const goal = distance > 1.2 ? anchor : add(duck.position, fromAngle(leader.heading));
-    const targetSpeed = clamp(leader.speed * 0.95 + (distance - 1) * 2.4, 0, DUCKS.fleeSpeed * 1.15);
+    // Like beads on a string: each duckling paddles after the one in front,
+    // keeping its distance, so the line follows the mother's own path. (Aiming
+    // for a spot behind the leader instead made that spot swing wide on every
+    // turn, and the ducklings had to dash about after it.)
+    const slack = length(sub(leader.position, duck.position)) - lineSpacing(leader, duck);
+    const targetSpeed = clamp(leader.speed + slack * 2.2, 0, DUCKS.fleeSpeed * 1.15);
+    const goal = leader.position;
 
     const dip = mother.state === "dabble" ? dipCurve(mother.stateAge - duck.chainIndex * 0.3) * 0.8 : 0;
     const turn = mother.state === "preen" ? Math.sin(mother.stateAge * 3.1 + duck.phase) * 0.6 : 0;
     const ease = 1 - Math.exp(-dt * 6);
     duck.headDip += (dip - duck.headDip) * Math.min(1, ease * 2);
     duck.headTurn += (turn - duck.headTurn) * ease;
-    this.turnAndAccelerate(duck, goal, targetSpeed, DUCKS.turnRate * 2.6, dt);
+    // Ducklings are light: closing up on the one in front, they stop short
+    // instead of coasting into its tail.
+    this.turnAndAccelerate(duck, goal, targetSpeed, DUCKS.turnRate * 2.6, dt, true, 5);
   }
 
   /** Pottering about a resting mother: paddle to a spot, linger, look about, dabble. */
@@ -405,6 +535,17 @@ export class DuckFamilies {
     duck.headTurn += (turn - duck.headTurn) * ease;
   }
 
+  /** Staying put: drift to a stop and look about. */
+  private waitFor(duck: Duck, dt: number): void {
+    duck.stateAge += dt;
+    this.turnAndAccelerate(duck, null, 0, DUCKS.turnRate, dt);
+    duck.speed *= Math.exp(-dt * 1.5);
+    duck.heading = wrapAngle(duck.heading + Math.sin(duck.stateAge * 0.7 + duck.phase * 3) * 0.4 * dt);
+    const ease = 1 - Math.exp(-dt * 6);
+    duck.headDip += (0 - duck.headDip) * Math.min(1, ease * 2);
+    duck.headTurn += (Math.sin(duck.stateAge * 1.3 + duck.phase) * 0.4 - duck.headTurn) * ease;
+  }
+
   /** A random spot around the mother, in open water and inside the pond. */
   private pickSpot(duck: Duck, mother: Duck): void {
     const radius = duckRadius(duck);
@@ -422,16 +563,24 @@ export class DuckFamilies {
 
   // ---- shared movement ------------------------------------------------------------
 
-  private turnAndAccelerate(duck: Duck, goal: Vec2 | null, targetSpeed: number, turnRate: number, dt: number): void {
+  private turnAndAccelerate(
+    duck: Duck,
+    goal: Vec2 | null,
+    targetSpeed: number,
+    turnRate: number,
+    dt: number,
+    avoid = true,
+    slowRate = 1.1,
+  ): void {
     if (goal && targetSpeed > 0.05) {
       const toGoal = normalize(sub(goal, duck.position), fromAngle(duck.heading));
-      const steer = normalize(add(toGoal, this.avoidance(duck)), toGoal);
+      const steer = avoid ? normalize(add(toGoal, this.avoidance(duck)), toGoal) : toGoal;
       const turn = wrapAngle(Math.atan2(steer.y, steer.x) - duck.heading);
       duck.heading = wrapAngle(duck.heading + clamp(turn, -turnRate * dt, turnRate * dt));
       // Slow down for sharp turns, like a real paddler.
       targetSpeed *= 0.55 + 0.45 * Math.max(0, Math.cos(turn));
     }
-    const rate = targetSpeed > duck.speed ? 1.8 : 1.1;
+    const rate = targetSpeed > duck.speed ? 1.8 : slowRate;
     duck.speed += (targetSpeed - duck.speed) * (1 - Math.exp(-dt * rate));
   }
 
@@ -455,7 +604,7 @@ export class DuckFamilies {
     if (look.y < margin) push.y += (margin - look.y) / margin * 1.5;
     if (look.y > CANVAS_HEIGHT - margin) push.y -= (look.y - (CANVAS_HEIGHT - margin)) / margin * 1.5;
     for (const other of this.ducks) {
-      if (other === duck) continue;
+      if (other === duck || other.submerged > 0.5) continue;
       const personal = (radius + duckRadius(other)) * (duck.duckling || other.duckling ? 0.9 : 1.6);
       const away = sub(duck.position, other.position);
       const distance = length(away);
@@ -471,6 +620,16 @@ export class DuckFamilies {
     duck.flap = Math.max(0, duck.flap - dt * 0.75);
   }
 
+  /** Now and then a quick waggle of the tail (and always after preening or a dive). */
+  private waggle(duck: Duck, dt: number): void {
+    if (duck.wagTime >= 0) {
+      duck.wagTime += dt;
+      if (duck.wagTime > WAG_SECONDS) duck.wagTime = -1;
+    } else if (duck.submerged === 0 && this.random.unit() < DUCKS.tailWagChance * dt) {
+      duck.wagTime = 0;
+    }
+  }
+
   /**
    * Ducks bump; they don't overlap. Any two bodies that overlap are pushed
    * apart, the smaller one giving way more (a duckling yields to an adult).
@@ -481,6 +640,8 @@ export class DuckFamilies {
         for (let b = a + 1; b < this.ducks.length; b += 1) {
           const first = this.ducks[a];
           const second = this.ducks[b];
+          // One underwater passes beneath the others.
+          if (first.submerged > 0.5 || second.submerged > 0.5) continue;
           const firstRadius = duckBodyRadius(first);
           const secondRadius = duckBodyRadius(second);
           const apart = sub(second.position, first.position);
@@ -496,10 +657,10 @@ export class DuckFamilies {
     }
   }
 
-  /** Never on a leaf (even one that drifts into the duck), never out of the pond. */
+  /** Never on a leaf (even one that drifts into the duck; underwater, under it is fine), never out of the pond. */
   private keepClear(duck: Duck): void {
     const radius = duckRadius(duck);
-    for (const leaf of this.leaves) {
+    for (const leaf of duck.submerged > 0.5 ? [] : this.leaves) {
       const away = sub(duck.position, leaf);
       const distance = length(away);
       const minimum = leaf.radius + radius * 0.7;
@@ -508,12 +669,13 @@ export class DuckFamilies {
     duck.position = this.clampToPond(duck.position, 4);
   }
 
+  /** A V-shaped wake opening from the duck's breast as she paddles. */
   private paddleWake(duck: Duck, dt: number, ripples: RippleSystem): void {
-    if (duck.speed < 1.2) return;
+    if (duck.speed < 1.2 || duck.submerged > 0) return;
     duck.wakeCountdown -= dt * clamp(duck.speed / 7, 0.4, 2.5);
     if (duck.wakeCountdown > 0) return;
     duck.wakeCountdown = DUCKS.wakeInterval;
-    ripples.trigger("wake", sub(duck.position, mul(fromAngle(duck.heading), duckRadius(duck) * 1.1)));
+    ripples.triggerWake(add(duck.position, mul(fromAngle(duck.heading), duckRadius(duck) * 0.5)), duck.heading, duck.speed);
   }
 
   /** The leaves as they float right now. */

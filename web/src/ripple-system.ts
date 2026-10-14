@@ -14,6 +14,31 @@ export interface RippleInstance {
   strength: number;
   type: RippleType;
   alive: boolean;
+  /** How fast the ring spreads (px/s): the type's own speed, or a wake's. */
+  spread: number;
+  /** A wake crest's swimmer heading (unit vector); 0, 0 for a plain ring. */
+  directionX: number;
+  directionY: number;
+}
+
+/** How far a ripple's ring has spread from its center. */
+export function rippleRadius(ripple: RippleInstance): number {
+  return RIPPLES.types[ripple.type].startRadius + ripple.spread * Math.max(ripple.age, 0);
+}
+
+/**
+ * How much of a ripple shows in the direction (x, y) (a unit vector) from its
+ * center: 1 all round for a plain ring; for a wake crest, only the two arcs
+ * that lie on the arms of the swimmer's V.
+ */
+export function rippleArc(ripple: RippleInstance, x: number, y: number): number {
+  if (ripple.directionX === 0 && ripple.directionY === 0) return 1;
+  const shape = RIPPLES.wakeShape;
+  // A crest touches the V's arms at 90° − halfAngle either side of the heading.
+  const offset =
+    (x * ripple.directionX + y * ripple.directionY - Math.sin((shape.halfAngle * Math.PI) / 180)) /
+    Math.max(shape.arcWidth, 0.01);
+  return Math.exp(-offset * offset);
 }
 
 export const RIPPLE_TYPE_ORDER = Object.keys(
@@ -36,6 +61,9 @@ export class RippleSystem {
       strength: 0,
       type: "touch",
       alive: false,
+      spread: 0,
+      directionX: 0,
+      directionY: 0,
     }),
   );
 
@@ -45,6 +73,27 @@ export class RippleSystem {
 
   /** Starts a ripple; `strength` scales how strong it is (1 = the type's own strength). */
   public trigger(type: RippleType, point: Vec2, strength = 1): void {
+    this.emit(type, point, strength, RIPPLES.types[type].expansionSpeed, 0, 0);
+  }
+
+  /**
+   * One crest of the wake behind a swimmer at `point`, heading `heading` at
+   * `speed`. Each crest spreads at speed × sin(halfAngle) and shows only where
+   * it touches the arms of the V, so the crests left along the way line up
+   * into a V behind the swimmer (a Kelvin wake). Too slow for that, it's a
+   * plain ring.
+   */
+  public triggerWake(point: Vec2, heading: number, speed: number, strength = 1): void {
+    const shape = RIPPLES.wakeShape;
+    const spread = speed * Math.sin((shape.halfAngle * Math.PI) / 180);
+    if (spread < shape.minimumSpread) {
+      this.emit("wake", point, strength, Math.max(shape.minimumSpread, 0.5), 0, 0);
+      return;
+    }
+    this.emit("wake", point, strength, spread, Math.cos(heading), Math.sin(heading));
+  }
+
+  private emit(type: RippleType, point: Vec2, strength: number, spread: number, directionX: number, directionY: number): void {
     const profile = RIPPLES.types[type];
     const rippleCount = Math.min(
       profile.ripplesPerEvent,
@@ -60,6 +109,9 @@ export class RippleSystem {
         profile.initialStrength * strength * Math.pow(profile.strengthFalloff, index);
       ripple.type = type;
       ripple.alive = true;
+      ripple.spread = spread;
+      ripple.directionX = directionX;
+      ripple.directionY = directionY;
     }
   }
 

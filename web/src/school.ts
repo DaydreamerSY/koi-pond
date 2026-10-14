@@ -247,8 +247,9 @@ export class School {
   }
 
   /**
-   * A koi swimming just under the surface parts the water: rings trail off
-   * behind it like a duck's wake, stronger the shallower and faster it goes.
+   * A koi swimming just under the surface parts the water: a V-shaped wake
+   * opens behind its head, like a duck's, stronger the shallower and faster
+   * it goes.
    */
   private updateWake(fish: Koi, dt: number): void {
     const wake = FISH.wake;
@@ -261,9 +262,9 @@ export class School {
     fish.wakeCountdown -= dt * pace;
     if (fish.wakeCountdown > 0) return;
     fish.wakeCountdown = wake.interval;
-    // The water parts over the back, behind the widest part of the body.
-    const back = fish.spine[Math.round((SPINE_NODES - 1) * 0.55)];
-    this.ripples.trigger("wake", back, Math.min(1.6, shallowness * wake.strength * Math.min(pace, 1.6)));
+    // The V opens from just behind the head, where the water first parts.
+    const bow = fish.spine[Math.round((SPINE_NODES - 1) * 0.15)];
+    this.ripples.triggerWake(bow, fish.heading, fish.speed, Math.min(1.6, shallowness * wake.strength * Math.min(pace, 1.6)));
   }
 
   private updateFeeding(fish: Koi, dt: number): void {

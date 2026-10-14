@@ -6,7 +6,7 @@
 
 import { LOTUS, LOTUS_LEAVES, RIPPLES, viewportPoint, type LotusFlowerSetting } from "./config";
 import type { LeafCircle } from "./pond-layout";
-import type { RippleSystem } from "./ripple-system";
+import { rippleArc, rippleRadius, type RippleSystem } from "./ripple-system";
 
 export interface LeafPose extends LeafCircle {
   /** Sway plus twist, in radians. */
@@ -108,13 +108,15 @@ export class LotusMotion {
           const weight = float.rippleWeights[ripple.type];
           if (weight <= 0) continue;
           const profile = RIPPLES.types[ripple.type];
-          const ring = profile.startRadius + profile.expansionSpeed * ripple.age;
+          const ring = rippleRadius(ripple);
           const dx = x - ripple.center.x;
           const dy = y - ripple.center.y;
           const distance = Math.hypot(dx, dy);
-          // How much of the ring's front is passing under the leaf right now.
-          const under = 1 - Math.abs(distance - ring) / Math.max(radius, 1);
+          // How much of the ring's front is passing under the leaf right now
+          // (of a wake crest, only the part on the arms of the V).
+          let under = 1 - Math.abs(distance - ring) / Math.max(radius, 1);
           if (under <= 0) continue;
+          if (distance > 0.001) under *= rippleArc(ripple, dx / distance, dy / distance);
           const fade = Math.max(0, 1 - ripple.age / Math.max(profile.lifetime, 0.001));
           const strength = under * weight * ripple.strength * fade;
           if (distance > 0.001) {
